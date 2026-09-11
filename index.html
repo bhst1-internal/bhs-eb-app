@@ -150,9 +150,16 @@
                 </div>
             </div>
 
-            <div class="bg-orange-600 text-white p-4 rounded-lg shadow text-center relative group cursor-help transition hover:bg-orange-700">
-                <h4 class="text-xs uppercase opacity-80" id="kpi-avg-bags-label">Avg Total Bags</h4>
-                <div id="kpi-avg-bags" class="text-3xl font-bold mt-1">-</div>
+            <!-- UPDATED ORANGE KPI CARD -->
+            <div class="bg-orange-600 text-white p-3 rounded-lg shadow text-center relative group cursor-help transition hover:bg-orange-700 flex flex-col justify-center">
+                <h4 class="text-xs uppercase opacity-80 mb-1" id="kpi-total-bags-interval-label">Total Bags</h4>
+                <div class="text-base font-bold mt-1 tracking-wide flex justify-center items-center">
+                    <span class="text-[0.65rem] uppercase opacity-80 mr-1">Avg:</span>
+                    <span id="kpi-avg-bags" class="text-xl text-white">-</span> 
+                    <span class="opacity-50 font-normal mx-2 text-orange-200">|</span> 
+                    <span class="text-[0.65rem] uppercase opacity-80 mr-1">Max:</span>
+                    <span id="kpi-max-bags" class="text-xl text-white">-</span>
+                </div>
                 <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-center border border-gray-700">
                     <div class="font-bold text-gray-300 uppercase tracking-wide">Based on Interval</div>
                     <div class="text-gray-400 mt-1">Updates based on selected timeline interval.</div>
@@ -671,9 +678,13 @@
 
             const interval = document.getElementById('intervalSelect').value;
             const evalInterval = interval === 'ALL' ? '15m' : interval;
+            
+            // UPDATED JS LOGIC FOR THE NEW KPI
             const counts = getBucketCounts(data, evalInterval, false);
             const numBuckets = Object.keys(counts).length;
+            
             const avgBags = numBuckets > 0 ? Math.round(uniqueBags / numBuckets) : 0;
+            const maxBags = numBuckets > 0 ? Math.max(...Object.values(counts).map(set => set.size)) : 0;
 
             // Standard DOM Updates
             document.getElementById('kpi-bags').innerText = uniqueBags;
@@ -683,10 +694,11 @@
             document.getElementById('tooltip-flights-mtb').innerHTML = `<span class="text-gray-400">MTB:</span> <span class="font-bold text-blue-300 ml-1">${mtbCount}</span>`;
             document.getElementById('tooltip-flights-sat').innerHTML = `<span class="text-gray-400">SAT:</span> <span class="font-bold text-blue-300 ml-1">${satCount}</span>`;
 
-            // Dynamic Average Updates
+            // Dynamic Interval Updates
             document.getElementById('kpi-avg-bags').innerText = avgBags;
+            document.getElementById('kpi-max-bags').innerText = maxBags;
             let intervalLabel = interval === '1d' ? 'Daily' : (interval === '1h' ? 'Hourly' : '15-Min');
-            document.getElementById('kpi-avg-bags-label').innerText = `Avg Bags (${intervalLabel})`;
+            document.getElementById('kpi-total-bags-interval-label').innerText = `Total Bags (${intervalLabel})`;
 
             // Time Breakdown Values & Dynamic Coloring mapped against Dark bg-gray-800 context
             let maxText = maxMin !== -Infinity ? minutesToTime(maxMin) : '-';
