@@ -160,9 +160,9 @@
                     <span class="text-[0.65rem] uppercase opacity-80 mr-1">Max:</span>
                     <span id="kpi-max-bags" class="text-xl text-white">-</span>
                 </div>
-                <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-center border border-gray-700">
-                    <div class="font-bold text-gray-300 uppercase tracking-wide">Based on Interval</div>
-                    <div class="text-gray-400 mt-1">Updates based on selected timeline interval.</div>
+                <div id="tooltip-total-bags-interval" class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-left border border-gray-700">
+                    <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">Based on Interval</div>
+                    <div class="text-gray-400 mb-1">Updates based on selected timeline interval.</div>
                     <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
                 </div>
             </div>
@@ -683,8 +683,17 @@
             const counts = getBucketCounts(data, evalInterval, false);
             const numBuckets = Object.keys(counts).length;
             
+            let maxBags = 0;
+            let maxBagsTime = '-';
+            if (numBuckets > 0) {
+                for (const [key, set] of Object.entries(counts)) {
+                    if (set.size > maxBags) {
+                        maxBags = set.size;
+                        maxBagsTime = key;
+                    }
+                }
+            }
             const avgBags = numBuckets > 0 ? Math.round(uniqueBags / numBuckets) : 0;
-            const maxBags = numBuckets > 0 ? Math.max(...Object.values(counts).map(set => set.size)) : 0;
 
             // Standard DOM Updates
             document.getElementById('kpi-bags').innerText = uniqueBags;
@@ -699,6 +708,14 @@
             document.getElementById('kpi-max-bags').innerText = maxBags;
             let intervalLabel = interval === '1d' ? 'Daily' : (interval === '1h' ? 'Hourly' : '15-Min');
             document.getElementById('kpi-total-bags-interval-label').innerText = `Total Bags (${intervalLabel})`;
+
+            // Populate the Date/Time tooltip mapping for Max Recorded value
+            document.getElementById('tooltip-total-bags-interval').innerHTML = `
+                <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide text-left">Based on Interval</div>
+                <div class="text-gray-400 mb-1">Updates based on selected timeline interval.</div>
+                <div><span class="text-gray-400">Max Recorded At:</span> <span class="font-bold text-orange-400 ml-1 font-mono">${maxBagsTime}</span></div>
+                <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
+            `;
 
             // Time Breakdown Values & Dynamic Coloring mapped against Dark bg-gray-800 context
             let maxText = maxMin !== -Infinity ? minutesToTime(maxMin) : '-';
