@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- PWA Requirements -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BHS EB Analysis Dashboard</title>
+    
+    <!-- Load External Libraries -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2canvas for capturing DOM elements as images -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <style>
+        :root {
+            --line: #d1d5db;
+            --text-sec: #6b7280;
+            --bg: #f9fafb;
+        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Utility to simulate scrollbars for custom dropdowns */
+        .sim-scroll::-webkit-scrollbar { width: 5px; }
+        .sim-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans text-gray-800 antialiased">
+
+    <!-- Loading Popup -->
+    <div id="loadingPopup" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-[100] flex items-center justify-center hidden backdrop-blur-sm transition-all duration-300">
+        <div class="bg-white p-8 rounded-xl shadow-2xl flex flex-col items-center space-y-4">
+            <svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="text-gray-800 font-bold text-lg">Processing Data...</p>
+            <p class="text-gray-500 text-sm">Please wait a moment</p>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Container -->
+    <div class="max-w-[90rem] mx-auto p-4 sm:p-6 space-y-6">
+        
+        <!-- HEADER & UPLOAD SECTION -->
+        <div class="bg-white rounded-lg shadow p-6 border-t-4 border-blue-600 transition-all">
+            <h1 class="text-2xl font-bold text-gray-800 mb-4">BHS Operation Dashboard - Early Baggage (EB)</h1>
+            <div class="bg-gray-50 p-4 rounded-md border border-gray-200">
+                <label class="block text-xs font-semibold text-gray-500 uppercase mb-2">Upload Data File</label>
+                <input type="file" id="fileUpload" accept=".xlsx, .xls" 
+                       class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 transition-all cursor-pointer font-mono" />
+                <p class="text-[0.7rem] text-gray-400 mt-2">Upload your <span class="font-mono">EB_Bag_Analysis - updated on 10092026.xlsx</span> file here.</p>
+            </div>
+        </div>
+
+        <!-- GLOBAL FILTERS & CONTROLS -->
+        <div class="bg-white rounded-lg shadow p-6 transition-all relative">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-sm font-bold text-gray-700 tracking-wide">Global Filters & Controls</h2>
+                <button onclick="resetFilters()" id="reset-filters" class="px-3 py-1 bg-gray-200 hover:bg-gray-300 text-sm font-semibold rounded transition cursor-pointer">
+                    Reset All Filters
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-2 lg:grid-cols-6 gap-4">
+                <!-- Start Date -->
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Start Date</label>
+                    <input type="date" id="filter-start-date" onchange="applyFilters()" class="w-full border p-2 rounded text-sm bg-gray-50 font-mono text-gray-700 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                </div>
+
+                <!-- End Date -->
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">End Date</label>
+                    <input type="date" id="filter-end-date" onchange="applyFilters()" class="w-full border p-2 rounded text-sm bg-gray-50 font-mono text-gray-700 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
+                </div>
+
+                <!-- Custom Dropdown: Flight -->
+                <div class="relative w-full custom-dropdown-container">
+                    <label class="block text-[0.65rem] font-semibold text-gray-500 uppercase mb-1">Flight</label>
+                    <div onclick="toggleDropdown('flight-menu')" class="w-full border p-2 rounded text-xs bg-gray-50 cursor-pointer flex justify-between items-center font-semibold text-blue-700 hover:bg-gray-100 shadow-sm transition-all">
+                        <span id="flight-text" class="truncate font-mono">All Flights</span>
+                        <svg class="w-4 h-4 text-gray-500 flex-shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                    <div id="flight-menu" class="custom-menu absolute z-50 w-full bg-white border border-gray-300 rounded shadow-lg mt-1 hidden flex-col overflow-hidden text-xs">
+                        <div class="p-2 hover:bg-blue-50 cursor-pointer font-semibold border-b text-blue-600 flex items-center gap-2 bg-gray-50" onclick="toggleAllCb('flight', 'Flights')">
+                            <input type="checkbox" id="chk-all-flight" checked class="pointer-events-none w-3.5 h-3.5 text-blue-600 rounded border-gray-300"> <span>All Flights</span>
+                        </div>
+                        <div id="flight-list" class="overflow-y-auto max-h-48 sim-scroll bg-white"></div>
+                    </div>
+                </div>
+
+                <!-- Custom Dropdown: Bag Status -->
+                <div class="relative w-full custom-dropdown-container">
+                    <label class="block text-[0.65rem] font-semibold text-gray-500 uppercase mb-1">Bag Status</label>
+                    <div onclick="toggleDropdown('status-menu')" class="w-full border p-2 rounded text-xs bg-gray-50 cursor-pointer flex justify-between items-center font-semibold text-blue-700 hover:bg-gray-100 shadow-sm transition-all">
+                        <span id="status-text" class="truncate font-mono">All Statuses</span>
+                        <svg class="w-4 h-4 text-gray-500 flex-shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                    <div id="status-menu" class="custom-menu absolute z-50 w-full bg-white border border-gray-300 rounded shadow-lg mt-1 hidden flex-col overflow-hidden text-xs">
+                        <div class="p-2 hover:bg-blue-50 cursor-pointer font-semibold border-b text-blue-600 flex items-center gap-2 bg-gray-50" onclick="toggleAllCb('status', 'Statuses')">
+                            <input type="checkbox" id="chk-all-status" checked class="pointer-events-none w-3.5 h-3.5 text-blue-600 rounded border-gray-300"> <span>All Statuses</span>
+                        </div>
+                        <div id="status-list" class="overflow-y-auto max-h-48 sim-scroll bg-white"></div>
+                    </div>
+                </div>
+
+                <!-- Standard Select: Security -->
+                <div>
+                    <label class="block text-[0.65rem] font-semibold text-gray-500 uppercase mb-1">Security</label>
+                    <select id="hbsFilter" onchange="applyFilters()" class="bg-gray-50 border border-gray-300 text-blue-700 text-xs font-semibold font-mono rounded shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-full p-2 transition-all hover:bg-gray-100 cursor-pointer"><option value="ALL">All Security</option></select>
+                </div>
+                
+                <!-- Standard Select: Hours Filter -->
+                <div>
+                    <label class="block text-[0.65rem] font-semibold text-gray-500 uppercase mb-1">Hours Before STD</label>
+                    <select id="hoursFilter" onchange="applyFilters()" class="bg-gray-50 border border-gray-300 text-blue-700 text-xs font-semibold font-mono rounded shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-full p-2 transition-all hover:bg-gray-100 cursor-pointer">
+                        <option value="ALL">All Times</option>
+                        <option value="Negative">Negative</option>
+                        <option value="less than 1 hour">less than 1 hour</option>
+                        <option value="1 hour to 4 hours">1 hour to 4 hours</option>
+                        <option value="more than 4 hours">more than 4 hours</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI SECTION -->
+        <div id="kpi-section" class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div class="bg-indigo-600 text-white p-4 rounded-lg shadow text-center">
+                <h4 class="text-xs uppercase opacity-80">Total Bags</h4>
+                <div id="kpi-bags" class="text-3xl font-bold mt-1">-</div>
+            </div>
+
+            <div class="bg-blue-600 text-white p-4 rounded-lg shadow text-center relative group cursor-help transition hover:bg-blue-700">
+                <h4 class="text-xs uppercase opacity-80">Total Flights</h4>
+                <div id="kpi-flights" class="text-3xl font-bold mt-1">-</div>
+                <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-left border border-gray-700">
+                    <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">FLIGHT ASSIGNMENT</div>
+                    <div id="tooltip-flights-mtb" class="mb-1"><span class="text-gray-400">MTB:</span> <span class="font-bold text-blue-300 ml-1">-</span></div>
+                    <div id="tooltip-flights-sat"><span class="text-gray-400">SAT:</span> <span class="font-bold text-blue-300 ml-1">-</span></div>
+                    <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
+                </div>
+            </div>
+
+            <div class="bg-orange-600 text-white p-4 rounded-lg shadow text-center relative group cursor-help transition hover:bg-orange-700">
+                <h4 class="text-xs uppercase opacity-80" id="kpi-avg-bags-label">Avg Total Bags</h4>
+                <div id="kpi-avg-bags" class="text-3xl font-bold mt-1">-</div>
+                <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-center border border-gray-700">
+                    <div class="font-bold text-gray-300 uppercase tracking-wide">Based on Interval</div>
+                    <div class="text-gray-400 mt-1">Updates based on selected timeline interval.</div>
+                    <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
+                </div>
+            </div>
+
+            <div class="bg-teal-600 text-white p-4 rounded-lg shadow text-center relative group cursor-help transition hover:bg-teal-700">
+                <h4 class="text-xs uppercase opacity-80">Avg Time Before STD (HH:mm)</h4>
+                <div id="kpi-avg-time-std" class="text-3xl font-bold mt-1">-</div>
+                <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-center border border-gray-700">
+                    <div class="font-bold text-gray-300 uppercase tracking-wide">Calculated As</div>
+                    <div class="text-gray-400 mt-1">Average of (STD - Time enter EB)</div>
+                    <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
+                </div>
+            </div>
+            
+            <div class="bg-gray-800 text-white p-3 rounded-lg shadow text-center relative group cursor-help transition hover:bg-gray-900 flex flex-col justify-center">
+                <h4 class="text-xs uppercase text-gray-400 mb-1">Time Before STD (HH:mm)</h4>
+                <div class="text-base font-bold mt-1 tracking-wide flex justify-center items-center">
+                    <span class="text-[0.65rem] uppercase text-gray-400 mr-1">Max:</span>
+                    <span id="kpi-max-time-std" class="text-xl text-gray-300">-</span> 
+                    <span class="opacity-50 font-normal mx-2 text-gray-500">|</span> 
+                    <span class="text-[0.65rem] uppercase text-gray-400 mr-1">Min:</span>
+                    <span id="kpi-min-time-std" class="text-xl text-gray-300">-</span>
+                </div>
+                <div id="tooltip-maxmin-std" class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-3 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-xl pointer-events-none text-left border border-gray-700">
+                    <!-- Dynamic Content in JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- EB TIMELINE (AREA CHART & DATA TABLE) -->
+        <div id="timelineSection" class="bg-white rounded-lg shadow p-6 border-t-4 border-indigo-500 transition-all relative">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wide">1. EB Timeline</h2>
+                
+                <div class="flex items-center space-x-3">
+                    <button id="saveJpegBtn" onclick="saveTimelineAsJPEG()" class="export-chart-btn flex items-center gap-1 text-[0.65rem] font-bold text-gray-500 hover:text-blue-600 transition bg-gray-100 px-2 py-1 rounded border border-gray-200" title="Save Chart as JPEG">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        JPEG
+                    </button>
+                    
+                    <button id="dataTableBtn" onclick="toggleDataTable()" title="Toggle Data Table" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:4px;border:1px solid var(--line);font-size:.65rem;font-weight:700;color:var(--text-sec);cursor:pointer;background:var(--bg);transition:all 0.2s;">
+                        Data Table
+                    </button>
+                    
+                    <button id="overlayBtn" onclick="toggleOverlay()" title="Overlay Dates" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:4px;border:1px solid var(--line);font-size:.65rem;font-weight:700;color:var(--text-sec);cursor:pointer;background:var(--bg);transition:all 0.2s;">
+                        Overlay
+                    </button>
+
+                    <div id="intervalContainer" class="flex items-center space-x-2 border-l border-gray-200 pl-3">
+                        <label class="text-[0.65rem] font-semibold text-gray-500 uppercase">Interval:</label>
+                        <select id="intervalSelect" onchange="applyFilters()" class="bg-gray-50 border border-gray-300 text-gray-800 text-xs font-mono rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 p-1.5 transition-all cursor-pointer">
+                            <option value="ALL">Display All</option>
+                            <option value="15m">15 Minutes</option>
+                            <option value="1h" selected>Hourly</option>
+                            <option value="1d">Daily</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <!-- Chart Area remains fixed at 400px height -->
+            <div id="timelineChart" class="w-full h-[400px]"></div>
+            
+            <!-- Synchronized Data Matrix Table -->
+            <div id="timelineTableContainer" class="mt-6 border-t border-gray-100 pt-6 transition-all duration-300 hidden">
+                <h3 class="text-[0.65rem] font-bold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                    Timeline Data Breakdown
+                </h3>
+                <div class="overflow-x-auto rounded border border-gray-200 shadow-sm max-h-[28rem] sim-scroll">
+                    <table class="w-full text-left border-collapse relative">
+                        <thead id="timelineThead">
+                            <!-- Populated by JS -->
+                        </thead>
+                        <tbody id="timelineTbody" class="bg-white divide-y divide-gray-200">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- DETAILS TABLE -->
+        <div class="bg-white rounded-lg shadow p-6 border-t-4 border-yellow-500 transition-all">
+            <div class="flex justify-between items-center mb-4">
+                <h2 id="detailsHeaderTitle" class="text-sm font-bold text-gray-700 uppercase tracking-wide">EB DETAILS: <span class="text-blue-600">ALL STATUSES</span></h2>
+                <button id="btn-export-excel" onclick="exportDetailsToExcel()" class="flex px-4 py-2 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 transition shadow-sm flex-shrink-0 items-center gap-1.5 cursor-pointer" title="Export this table to Excel">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Export
+                </button>
+            </div>
+            <div class="overflow-x-auto max-h-[36rem] rounded border border-gray-200 shadow-sm relative sim-scroll">
+                <table class="w-full text-left border-collapse relative">
+                    <thead>
+                        <tr>
+                            <th class="sticky top-0 z-20 bg-gray-50 text-sm font-bold text-gray-500 uppercase tracking-wider px-6 py-4 border-b border-gray-200 shadow-sm">BAGTAGID</th>
+                            <th class="sticky top-0 z-20 bg-gray-50 text-sm font-bold text-gray-500 uppercase tracking-wider px-6 py-4 border-b border-gray-200 shadow-sm">EVENT</th>
+                            <th class="sticky top-0 z-20 bg-gray-50 text-sm font-bold text-gray-500 uppercase tracking-wider px-6 py-4 border-b border-gray-200 shadow-sm">STD</th>
+                            <th class="sticky top-0 z-20 bg-gray-50 text-sm font-bold text-gray-500 uppercase tracking-wider px-6 py-4 border-b border-gray-200 shadow-sm">HRS BEFORE STD</th>
+                            <th class="sticky top-0 z-20 bg-gray-50 text-sm font-bold text-gray-500 uppercase tracking-wider px-6 py-4 border-b border-gray-200 shadow-sm">ASSIGNED CHUTE</th>
+                            <th class="sticky top-0 z-20 bg-gray-50 text-sm font-bold text-gray-500 uppercase tracking-wider px-6 py-4 border-b border-gray-200 shadow-sm">FLIGHT</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailsTableBody" class="bg-white divide-y divide-gray-200">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="text-xs text-gray-400 mt-2 text-right" id="detailsCount">Showing 0 rows</div>
+        </div>
+        
+    </div>
+
+    <script>
+        let globalData = [];
+        let currentDetailsData = []; // Store fully processed records for flawless excel exporting
+        let isOverlayMode = false;
+        let isDataTableVisible = false; // Data table defaults to hidden
+
+        // Reset All Filters function
+        function resetFilters() {
+            const startInput = document.getElementById('filter-start-date');
+            const endInput = document.getElementById('filter-end-date');
+            if(startInput.min) startInput.value = startInput.min;
+            if(endInput.max) endInput.value = endInput.max;
+
+            document.getElementById('chk-all-flight').checked = true;
+            document.querySelectorAll('.flight-cb').forEach(cb => cb.checked = true);
+            updateDropdownText('flight', 'Flights');
+
+            document.getElementById('chk-all-status').checked = true;
+            document.querySelectorAll('.status-cb').forEach(cb => cb.checked = true);
+            updateDropdownText('status', 'Statuses');
+
+            document.getElementById('hbsFilter').value = "ALL";
+            document.getElementById('hoursFilter').value = "ALL";
+            
+            document.getElementById('intervalSelect').value = "1h";
+
+            applyFilters();
+        }
+
+        // Custom Dropdown UI Logic
+        function toggleDropdown(menuId) {
+            const menu = document.getElementById(menuId);
+            const isHidden = menu.classList.contains('hidden');
+            // Close all
+            document.querySelectorAll('.custom-menu').forEach(m => m.classList.add('hidden'));
+            // Open clicked
+            if(isHidden) menu.classList.remove('hidden');
+        }
+
+        // Close dropdowns if clicking outside
+        document.addEventListener('click', e => {
+            if(!e.target.closest('.custom-dropdown-container') && !e.target.closest('.border-t-4')) {
+                document.querySelectorAll('.custom-menu').forEach(m => m.classList.add('hidden'));
+            }
+        });
+
+        // Toggle Data Table Visibility
+        function toggleDataTable() {
+            isDataTableVisible = !isDataTableVisible;
+            const container = document.getElementById('timelineTableContainer');
+            const btn = document.getElementById('dataTableBtn');
+
+            if (isDataTableVisible) {
+                container.classList.remove('hidden');
+                btn.style.backgroundColor = '#e0e7ff';
+                btn.style.borderColor = '#6366f1';
+                btn.style.color = '#4338ca';
+            } else {
+                container.classList.add('hidden');
+                btn.style.backgroundColor = 'var(--bg)';
+                btn.style.borderColor = 'var(--line)';
+                btn.style.color = 'var(--text-sec)';
+            }
+        }
+
+        function populateCustomDropdown(key, dataSet, title) {
+            const list = document.getElementById(`${key}-list`);
+            let html = '';
+            [...dataSet].sort().forEach(item => {
+                html += `<div class="p-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 text-gray-600 flex items-center gap-2 font-mono" onclick="toggleSingleCb(this, '${key}', '${title}')">
+                    <input type="checkbox" value="${item}" checked class="${key}-cb pointer-events-none w-3.5 h-3.5 text-blue-600 rounded border-gray-300"> <span>${item}</span>
+                </div>`;
+            });
+            list.innerHTML = html;
+        }
+
+        function toggleAllCb(key, title) {
+            const allCb = document.getElementById(`chk-all-${key}`);
+            const newState = !allCb.checked;
+            allCb.checked = newState;
+            document.querySelectorAll(`.${key}-cb`).forEach(cb => cb.checked = newState);
+            updateDropdownText(key, title);
+            applyFilters();
+        }
+
+        function toggleSingleCb(element, key, title) {
+            const cb = element.querySelector('input');
+            cb.checked = !cb.checked;
+            
+            const allCbs = document.querySelectorAll(`.${key}-cb`);
+            const allChecked = Array.from(allCbs).every(c => c.checked);
+            document.getElementById(`chk-all-${key}`).checked = allChecked;
+            
+            updateDropdownText(key, title);
+            applyFilters();
+        }
+
+        function updateDropdownText(key, title) {
+            const allCbs = document.querySelectorAll(`.${key}-cb`);
+            const checkedCbs = document.querySelectorAll(`.${key}-cb:checked`);
+            const textEl = document.getElementById(`${key}-text`);
+            
+            if (checkedCbs.length === allCbs.length) {
+                textEl.innerText = `All ${title}`;
+            } else if (checkedCbs.length === 0) {
+                textEl.innerText = `No ${title} Selected`;
+            } else if (key === 'status') {
+                // Combine actual selected Bag Status values using comma separation
+                textEl.innerText = Array.from(checkedCbs).map(cb => cb.value).join(', ');
+            } else if (checkedCbs.length === 1) {
+                textEl.innerText = checkedCbs[0].value;
+            } else {
+                textEl.innerText = `${checkedCbs.length} ${title} Selected`;
+            }
+        }
+
+        function getSelectedCustom(key) {
+            const allCb = document.getElementById(`chk-all-${key}`);
+            if (allCb && allCb.checked) return ["ALL"];
+            return Array.from(document.querySelectorAll(`.${key}-cb:checked`)).map(c => c.value);
+        }
+
+        // Export Function to pull details purely dynamically from processing into a clean .xlsx
+        function exportDetailsToExcel() {
+            if (!currentDetailsData || currentDetailsData.length === 0) {
+                alert("No data available to export.");
+                return;
+            }
+
+            let exportArr = currentDetailsData.map(row => {
+                return {
+                    'BAGTAGID': row.bagTagId || '-',
+                    'EVENT': row.event || '-',
+                    'STD': row.std || '-',
+                    'HRS BEFORE STD': row.hrsBefore || '-',
+                    'ASSIGNED CHUTE': row.rawChute || '-',
+                    'FLIGHT': row.flight || '-'
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(exportArr);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "EB_Details");
+            XLSX.writeFile(wb, "EB_Details_Export.xlsx");
+        }
+
+        // Save entire Timeline section as JPEG
+        function saveTimelineAsJPEG() {
+            const element = document.getElementById('timelineSection');
+            const btn = document.getElementById('saveJpegBtn');
+            const overlayBtn = document.getElementById('overlayBtn');
+            const dataTableBtn = document.getElementById('dataTableBtn');
+            const intervalContainer = document.getElementById('intervalContainer');
+            
+            btn.style.visibility = 'hidden';
+            overlayBtn.style.visibility = 'hidden';
+            dataTableBtn.style.visibility = 'hidden';
+            intervalContainer.style.visibility = 'hidden';
+            
+            html2canvas(element, {
+                backgroundColor: '#ffffff',
+                scale: 2
+            }).then(canvas => {
+                btn.style.visibility = 'visible';
+                overlayBtn.style.visibility = 'visible';
+                dataTableBtn.style.visibility = 'visible';
+                intervalContainer.style.visibility = 'visible';
+                
+                const link = document.createElement('a');
+                link.download = 'EB_Timeline_Section.jpg';
+                link.href = canvas.toDataURL('image/jpeg', 0.9);
+                link.click();
+            });
+        }
+
+        function toggleOverlay() {
+            isOverlayMode = !isOverlayMode;
+            document.getElementById('overlayBtn').style.backgroundColor = isOverlayMode ? '#e0e7ff' : 'var(--bg)';
+            document.getElementById('overlayBtn').style.borderColor = isOverlayMode ? '#6366f1' : 'var(--line)';
+            applyFilters();
+        }
+
+        document.getElementById('fileUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Show Interactive In-Progress Popup
+            document.getElementById('loadingPopup').classList.remove('hidden');
+
+            // Use setTimeout to allow the browser to paint the modal before parsing freezes thread
+            setTimeout(() => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    let sheetName = workbook.SheetNames.includes('20260828_BagTracking') ? '20260828_BagTracking' : workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[sheetName];
+                    
+                    let rawData = XLSX.utils.sheet_to_json(sheet);
+                    // Strictly exclude any row where BAGTAGID does not contain at least one digit
+                    globalData = rawData.filter(row => row.BAGTAGID && /\d/.test(String(row.BAGTAGID)));
+                    
+                    populateFilters(globalData);
+                    applyFilters();
+
+                    // Hide Popup
+                    document.getElementById('loadingPopup').classList.add('hidden');
+                };
+                reader.readAsArrayBuffer(file);
+            }, 100);
+        });
+
+        function parseDateString(eventStr) {
+            if(!eventStr || String(eventStr).length < 8) return null;
+            let str = String(eventStr);
+            return `${str.substring(4,8)}-${str.substring(2,4)}-${str.substring(0,2)}`; 
+        }
+
+        function getHoursCategory(timeStr) {
+            if(!timeStr) return "Unknown";
+            // Strictly assign negative bags to Negative trace
+            if(String(timeStr).includes('-')) return "Negative";
+
+            let parts = String(timeStr).split(':');
+            if(parts.length < 2) return "Unknown";
+            let hours = parseInt(parts[0], 10) + (parseInt(parts[1], 10) / 60);
+            
+            if(hours >= 0 && hours < 1) return "less than 1 hour";
+            if(hours >= 1 && hours <= 4) return "1 hour to 4 hours";
+            if(hours > 4) return "more than 4 hours";
+            return "Unknown";
+        }
+
+        function populateFilters(data) {
+            const dates = new Set(), flights = new Set(), statuses = new Set(), hbs = new Set();
+            data.forEach(row => {
+                let d = parseDateString(row.EVENT);
+                if(d) dates.add(d);
+                const flightKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
+                if (flightKey && row[flightKey]) flights.add(row[flightKey]);
+                
+                if(row.BAGSTATUS) statuses.add(row.BAGSTATUS);
+                if(row.HBSSTATUS) hbs.add(row.HBSSTATUS);
+                row.HOUR_CATEGORY = getHoursCategory(row['HOURS BEFORE STD']);
+            });
+
+            // Date Pickers Population using native HTML5 inputs
+            const sortedDates = [...dates].sort();
+            const startInput = document.getElementById('filter-start-date');
+            const endInput = document.getElementById('filter-end-date');
+            
+            if (sortedDates.length > 0) {
+                startInput.min = sortedDates[0];
+                startInput.max = sortedDates[sortedDates.length - 1];
+                startInput.value = sortedDates[0];
+
+                endInput.min = sortedDates[0];
+                endInput.max = sortedDates[sortedDates.length - 1];
+                endInput.value = sortedDates[sortedDates.length - 1];
+            }
+
+            // Custom Pickers
+            populateCustomDropdown('flight', flights, 'Flights');
+            populateCustomDropdown('status', statuses, 'Statuses');
+
+            // Standard Pickers
+            const hbsSelect = document.getElementById('hbsFilter');
+            hbsSelect.innerHTML = `<option value="ALL">All Security</option>`;
+            [...hbs].sort().forEach(item => { hbsSelect.innerHTML += `<option value="${item}">${item}</option>`; });
+        }
+
+        function applyFilters() {
+            const startD = document.getElementById('filter-start-date').value;
+            const endD = document.getElementById('filter-end-date').value;
+            const flightsF = getSelectedCustom('flight');
+            const statusesF = getSelectedCustom('status');
+            
+            const hbsF = document.getElementById('hbsFilter').value;
+            const hoursF = document.getElementById('hoursFilter').value;
+
+            const filteredData = globalData.filter(row => {
+                let rowDate = parseDateString(row.EVENT);
+                const flightKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
+                const rowFlight = flightKey ? row[flightKey] : null;
+
+                const validDate = (!startD || rowDate >= startD) && (!endD || rowDate <= endD);
+
+                return validDate &&
+                       (flightsF.includes("ALL") || flightsF.includes(rowFlight)) &&
+                       (statusesF.includes("ALL") || statusesF.includes(row.BAGSTATUS)) &&
+                       (hbsF === "ALL" || row.HBSSTATUS === hbsF) &&
+                       (hoursF === "ALL" || row.HOUR_CATEGORY === hoursF);
+            });
+
+            // Dynamically mount dynamic Title Status injection in Details
+            let statusText = document.getElementById('status-text').innerText;
+            document.getElementById('detailsHeaderTitle').innerHTML = `EB DETAILS: <span class="text-blue-600">${statusText.toUpperCase()}</span>`;
+
+            updateKPIs(filteredData);
+            updateTimeline(filteredData);
+            updateDetails(filteredData);
+        }
+
+        function getBucketCounts(data, intervalType, normalizeDate = false) {
+            let timeBuckets = {};
+            data.forEach(d => {
+                if(d.EVENT && d.BAGTAGID) {
+                    let timeStr = String(d.EVENT);
+                    if(timeStr.length >= 17) {
+                        let DD = timeStr.substring(0, 2); let MM = timeStr.substring(2, 4); let YYYY = timeStr.substring(4, 8);
+                        let hh = timeStr.substring(9, 11); let mm = timeStr.substring(12, 14);
+
+                        let bYYYY = normalizeDate ? '2000' : YYYY;
+                        let bMM = normalizeDate ? '01' : MM;
+                        let bDD = normalizeDate ? '01' : DD;
+
+                        let bucketKey = "";
+                        if (intervalType === '1d') bucketKey = `${bYYYY}-${bMM}-${bDD} 00:00`;
+                        else if (intervalType === '1h') bucketKey = `${bYYYY}-${bMM}-${bDD} ${hh}:00`;
+                        else {
+                            let roundedMins = Math.floor(parseInt(mm, 10) / 15) * 15;
+                            bucketKey = `${bYYYY}-${bMM}-${bDD} ${hh}:${roundedMins.toString().padStart(2, '0')}`;
+                        }
+
+                        if (!timeBuckets[bucketKey]) timeBuckets[bucketKey] = new Set();
+                        timeBuckets[bucketKey].add(d.BAGTAGID);
+                    }
+                }
+            });
+            return timeBuckets;
+        }
+
+        function updateKPIs(data) {
+            function timeToMinutes(timeStr) {
+                if (!timeStr) return null;
+                let str = String(timeStr).trim();
+                let isNegative = str.startsWith('-');
+                if (isNegative) str = str.substring(1);
+                let parts = str.split(':');
+                if (parts.length < 2) return null;
+                let h = parseInt(parts[0], 10) || 0;
+                let m = parseInt(parts[1], 10) || 0;
+                let total = h * 60 + m;
+                return isNegative ? -total : total;
+            }
+
+            function minutesToTime(totalMinutes) {
+                if (totalMinutes === null || isNaN(totalMinutes)) return '-';
+                let isNegative = totalMinutes < 0;
+                let absMin = Math.abs(Math.round(totalMinutes));
+                let h = Math.floor(absMin / 60);
+                let m = absMin % 60;
+                return (isNegative ? '-' : '') + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+            }
+
+            const uniqueBags = new Set(data.map(d => d.BAGTAGID)).size;
+            const flightsSet = new Set();
+            
+            // For Flight Assignment tracking (MTB vs SAT)
+            const flightDestinations = {};
+            
+            let totalMinutes = 0, countMinutes = 0;
+            let maxMin = -Infinity, minMin = Infinity;
+            let maxBag = '-', minBag = '-';
+
+            data.forEach(d => {
+                const fKey = Object.keys(d).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
+                const flight = fKey ? d[fKey] : null;
+                
+                if (flight) {
+                    flightsSet.add(flight);
+                    let curr = (d.TDP_IDCURRNAME || '').trim().toUpperCase();
+                    let fin = (d.TDP_IDFINALNAME || '').trim().toUpperCase();
+                    
+                    if (!flightDestinations[flight]) {
+                        if (curr.startsWith('MA') || curr.startsWith('MB') || fin.startsWith('MA') || fin.startsWith('MB')) {
+                            flightDestinations[flight] = 'MTB';
+                        } else if (curr.startsWith('MC') || fin.startsWith('MC')) {
+                            flightDestinations[flight] = 'SAT';
+                        }
+                    }
+                }
+
+                let mins = timeToMinutes(d['HOURS BEFORE STD']);
+                if (mins !== null) {
+                    totalMinutes += mins;
+                    countMinutes++;
+                    if (mins > maxMin) { maxMin = mins; maxBag = d.BAGTAGID || '-'; }
+                    if (mins < minMin) { minMin = mins; minBag = d.BAGTAGID || '-'; }
+                }
+            });
+
+            // Calculate MTB and SAT flight assignments
+            let mtbCount = 0, satCount = 0;
+            flightsSet.forEach(f => {
+                if (flightDestinations[f] === 'MTB') mtbCount++;
+                else if (flightDestinations[f] === 'SAT') satCount++;
+            });
+
+            const avgMinutes = countMinutes > 0 ? totalMinutes / countMinutes : null;
+
+            const interval = document.getElementById('intervalSelect').value;
+            const evalInterval = interval === 'ALL' ? '15m' : interval;
+            const counts = getBucketCounts(data, evalInterval, false);
+            const numBuckets = Object.keys(counts).length;
+            const avgBags = numBuckets > 0 ? Math.round(uniqueBags / numBuckets) : 0;
+
+            // Standard DOM Updates
+            document.getElementById('kpi-bags').innerText = uniqueBags;
+            document.getElementById('kpi-flights').innerText = flightsSet.size;
+            
+            // Flight Assignments DOM
+            document.getElementById('tooltip-flights-mtb').innerHTML = `<span class="text-gray-400">MTB:</span> <span class="font-bold text-blue-300 ml-1">${mtbCount}</span>`;
+            document.getElementById('tooltip-flights-sat').innerHTML = `<span class="text-gray-400">SAT:</span> <span class="font-bold text-blue-300 ml-1">${satCount}</span>`;
+
+            // Dynamic Average Updates
+            document.getElementById('kpi-avg-bags').innerText = avgBags;
+            let intervalLabel = interval === '1d' ? 'Daily' : (interval === '1h' ? 'Hourly' : '15-Min');
+            document.getElementById('kpi-avg-bags-label').innerText = `Avg Bags (${intervalLabel})`;
+
+            // Time Breakdown Values & Dynamic Coloring mapped against Dark bg-gray-800 context
+            let maxText = maxMin !== -Infinity ? minutesToTime(maxMin) : '-';
+            let minText = minMin !== Infinity ? minutesToTime(minMin) : '-';
+
+            let maxColor = "text-gray-300";
+            if (maxMin !== -Infinity) {
+                if (maxMin < 0) maxColor = "text-red-400";
+                else if (maxMin >= 60) maxColor = "text-emerald-400";
+                else maxColor = "text-yellow-400";
+            }
+
+            let minColor = "text-gray-300";
+            if (minMin !== Infinity) {
+                if (minMin < 0) minColor = "text-red-400";
+                else if (minMin >= 60) minColor = "text-emerald-400";
+                else minColor = "text-yellow-400";
+            }
+
+            document.getElementById('kpi-avg-time-std').innerText = minutesToTime(avgMinutes);
+            
+            let maxEl = document.getElementById('kpi-max-time-std');
+            maxEl.innerText = maxText;
+            maxEl.className = `text-xl font-mono ${maxColor}`;
+
+            let minEl = document.getElementById('kpi-min-time-std');
+            minEl.innerText = minText;
+            minEl.className = `text-xl font-mono ${minColor}`;
+
+            // HTML Tooltip Content Override applying dynamic color bindings to BAGTAGID displays
+            document.getElementById('tooltip-maxmin-std').innerHTML = `
+                <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">Extremes Breakdown</div>
+                <div class="mb-1"><span class="text-gray-400">Max Bag:</span> <span class="font-bold ${maxColor} ml-1 font-mono">${maxBag}</span></div>
+                <div><span class="text-gray-400">Min Bag:</span> <span class="font-bold ${minColor} ml-1 font-mono">${minBag}</span></div>
+                <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
+            `;
+        }
+
+        function generateTrace(data, intervalType, name, lineColor, fillColor, isOverlay) {
+            let timeBuckets = getBucketCounts(data, intervalType, isOverlay);
+            let xValues = Object.keys(timeBuckets).sort();
+            let yValues = xValues.map(k => timeBuckets[k].size);
+
+            if (xValues.length > 0) {
+                let firstDate = new Date(xValues[0].replace(' ', 'T'));
+                let lastDate = new Date(xValues[xValues.length - 1].replace(' ', 'T'));
+                let msOffset = intervalType === '1d' ? 86400000 : (intervalType === '1h' ? 3600000 : 900000);
+                
+                let startAnchor = new Date(firstDate.getTime() - msOffset);
+                let endAnchor = new Date(lastDate.getTime() + msOffset);
+                
+                const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+
+                xValues.unshift(fmt(startAnchor));
+                yValues.unshift(0);
+                xValues.push(fmt(endAnchor));
+                yValues.push(0);
+            }
+
+            return { 
+                x: xValues, 
+                y: yValues, 
+                type: 'scatter', 
+                mode: 'lines',
+                fill: 'tozeroy',
+                fillcolor: fillColor,
+                line: { shape: 'linear', color: lineColor, width: 2 },
+                name: name
+            };
+        }
+
+        function updateTimeline(data) {
+            const interval = document.getElementById('intervalSelect').value;
+            let traces = [];
+
+            const layout = { 
+                margin: {t: 60, r: 20, l: 60, b: 60},
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                font: { family: 'ui-sans-serif, system-ui, sans-serif' },
+                xaxis: { 
+                    title: '', 
+                    gridcolor: '#f1f5f9' 
+                },
+                yaxis: { 
+                    title: { text: 'Bags Count', standoff: 20 },
+                    gridcolor: '#f1f5f9',
+                    rangemode: 'tozero'
+                },
+                hovermode: 'x unified',
+                hoverlabel: {
+                    bgcolor: '#f8fafc',
+                    bordercolor: '#cbd5e1',
+                    font: { color: '#1e293b', family: 'ui-sans-serif, system-ui, sans-serif', size: 12 }
+                },
+                showlegend: true,
+                legend: { 
+                    orientation: 'h', 
+                    x: 0.01, 
+                    y: 1.15, 
+                    xanchor: 'left', 
+                    yanchor: 'bottom',
+                    bgcolor: 'rgba(255,255,255,0)',
+                    font: { size: 11, color: '#475569' }
+                }
+            };
+
+            const baseInterval = interval === 'ALL' ? '15m' : interval;
+
+            if (isOverlayMode) {
+                layout.xaxis.tickformat = '%H:%M';
+                layout.xaxis.hoverformat = '%H:%M'; 
+                
+                let uniqueDates = [...new Set(data.map(d => parseDateString(d.EVENT)).filter(Boolean))].sort();
+                const colors = [
+                    {line: '#3b82f6', fill: 'rgba(59, 130, 246, 0.10)'},
+                    {line: '#10b981', fill: 'rgba(16, 185, 129, 0.10)'},
+                    {line: '#f59e0b', fill: 'rgba(245, 158, 11, 0.10)'},
+                    {line: '#8b5cf6', fill: 'rgba(139, 92, 246, 0.10)'},
+                    {line: '#ef4444', fill: 'rgba(239, 68, 68, 0.10)'}
+                ];
+
+                uniqueDates.forEach((dateStr, idx) => {
+                    let dateData = data.filter(d => parseDateString(d.EVENT) === dateStr);
+                    let colorObj = colors[idx % colors.length];
+                    
+                    let parts = dateStr.split('-');
+                    let traceName = parts.length === 3 ? `${parts[2]}/${parts[1]}` : dateStr;
+                    
+                    traces.push(generateTrace(dateData, baseInterval, traceName, colorObj.line, colorObj.fill, true));
+                });
+            } else {
+                layout.xaxis.tickformat = ''; 
+                layout.xaxis.hoverformat = '%d/%m %H:%M'; 
+
+                let dataNegative = data.filter(d => d.HOUR_CATEGORY === 'Negative');
+                let dataLess1 = data.filter(d => d.HOUR_CATEGORY === 'less than 1 hour');
+                let data1to4 = data.filter(d => d.HOUR_CATEGORY === '1 hour to 4 hours');
+                let dataMore4 = data.filter(d => d.HOUR_CATEGORY === 'more than 4 hours');
+
+                // Generate completely isolated traces to match the exact table formatting
+                if (dataMore4.length > 0) traces.push(generateTrace(dataMore4, baseInterval, '> 4 hours', '#22c55e', 'rgba(34, 197, 94, 0.15)', false)); // Green
+                if (data1to4.length > 0) traces.push(generateTrace(data1to4, baseInterval, '1 - 4 hours', '#eab308', 'rgba(234, 179, 8, 0.15)', false)); // Yellow
+                if (dataLess1.length > 0) traces.push(generateTrace(dataLess1, baseInterval, '< 1 hour', '#f97316', 'rgba(249, 115, 22, 0.15)', false)); // Orange
+                if (dataNegative.length > 0) traces.push(generateTrace(dataNegative, baseInterval, 'Negative', '#ef4444', 'rgba(239, 68, 68, 0.15)', false)); // Red
+            }
+            
+            Plotly.newPlot('timelineChart', traces, layout, {responsive: true});
+            
+            // Generate Data Table Matrix
+            updateTimelineTable(traces);
+        }
+
+        // --- Details Section & Matrix Helper Functions ---
+
+        function updateTimelineTable(traces) {
+            let interval = document.getElementById('intervalSelect').value;
+            let isHourly = interval === '1h';
+            let is15m = interval === '15m' || interval === 'ALL';
+
+            // New Heatmap Function logically mapping the row traces (Green/Yellow/Orange/Red) against the Threshold limits
+            function getHeatmapClass(val, traceName) {
+                if (val <= 0) return 'bg-white text-gray-300';
+                
+                let level = 0; // 1 = light, 2 = medium, 3 = dark
+                if (isHourly) {
+                    if (val < 100) level = 1;
+                    else if (val <= 200) level = 2;
+                    else level = 3;
+                } else if (is15m) {
+                    if (val < 25) level = 1;
+                    else if (val <= 50) level = 2;
+                    else level = 3;
+                } else {
+                    level = 2; // Medium fallback for "Daily"
+                }
+
+                if (traceName.includes('> 4 hours')) {
+                    if (level === 1) return 'bg-green-100 text-green-800 font-bold';
+                    if (level === 2) return 'bg-green-300 text-green-900 font-bold';
+                    if (level === 3) return 'bg-green-600 text-white font-bold';
+                } else if (traceName.includes('1 - 4 hours')) {
+                    if (level === 1) return 'bg-yellow-100 text-yellow-800 font-bold';
+                    if (level === 2) return 'bg-yellow-300 text-yellow-900 font-bold';
+                    if (level === 3) return 'bg-yellow-500 text-white font-bold';
+                } else if (traceName.includes('< 1 hour')) {
+                    if (level === 1) return 'bg-orange-100 text-orange-800 font-bold';
+                    if (level === 2) return 'bg-orange-300 text-orange-900 font-bold';
+                    if (level === 3) return 'bg-orange-600 text-white font-bold';
+                } else if (traceName.includes('Negative')) {
+                    if (level === 1) return 'bg-red-100 text-red-800 font-bold';
+                    if (level === 2) return 'bg-red-300 text-red-900 font-bold';
+                    if (level === 3) return 'bg-red-600 text-white font-bold';
+                }
+                
+                // Fallback style for Overlay trace dates (Blue gradient)
+                if (level === 1) return 'bg-indigo-100 text-indigo-800 font-bold';
+                if (level === 2) return 'bg-indigo-300 text-indigo-900 font-bold';
+                if (level === 3) return 'bg-indigo-600 text-white font-bold';
+            }
+
+            let allX = new Set();
+            traces.forEach(trace => {
+                if(trace.x) trace.x.forEach(xVal => allX.add(xVal));
+            });
+            let sortedX = Array.from(allX).sort();
+
+            let activeX = [];
+            sortedX.forEach(xVal => {
+                let colSum = 0;
+                traces.forEach(trace => {
+                    let idx = trace.x.indexOf(xVal);
+                    if (idx !== -1) colSum += trace.y[idx];
+                });
+                if (colSum > 0) activeX.push(xVal);
+            });
+            sortedX = activeX; 
+
+            let uniqueDates = new Set(sortedX.map(x => x.split(' ')[0]));
+            let showDate = uniqueDates.size > 1;
+
+            let theadHtml = `<tr>
+                <th class="sticky top-0 left-0 z-30 bg-gray-100 px-3 py-2 text-xs font-bold text-gray-700 uppercase tracking-wider border-b border-gray-200 shadow-[1px_0_0_0_#e5e7eb] whitespace-nowrap">${isOverlayMode ? 'Date' : 'Hours Before STD'}</th>`;
+            
+            sortedX.forEach(xVal => {
+                let displayTime = xVal;
+                if (isOverlayMode) {
+                    displayTime = xVal.split(' ')[1]; 
+                } else {
+                    let datePart = `${xVal.substring(8,10)}/${xVal.substring(5,7)}`;
+                    let timePart = xVal.substring(11,16);
+                    displayTime = showDate ? `${datePart}<br/>${timePart}` : timePart;
+                }
+                theadHtml += `<th class="sticky top-0 z-20 bg-gray-50 px-2 py-2 text-[0.65rem] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 text-center align-middle w-12 min-w-[3rem] leading-tight">${displayTime}</th>`;
+            });
+            
+            theadHtml += `<th class="sticky top-0 right-0 z-30 bg-gray-100 px-3 py-2 text-xs font-extrabold text-gray-700 uppercase tracking-wider border-b border-gray-200 shadow-[-1px_0_0_0_#e5e7eb] text-center whitespace-nowrap w-24">Total Bags</th></tr>`;
+
+            let tbodyHtml = '';
+            let columnTotals = new Array(sortedX.length).fill(0);
+            let grandTotal = 0;
+
+            traces.forEach(trace => {
+                let rowTotal = 0;
+                let cellsHtml = '';
+                
+                sortedX.forEach((xVal, colIdx) => {
+                    let idx = trace.x.indexOf(xVal);
+                    let val = (idx !== -1) ? trace.y[idx] : 0;
+                    rowTotal += val;
+                    columnTotals[colIdx] += val;
+                    
+                    let displayVal = val > 0 
+                        ? `<span class="font-mono">${val}</span>` 
+                        : `<span class="font-mono">-</span>`;
+
+                    let hmClass = getHeatmapClass(val, trace.name);
+                    cellsHtml += `<td class="px-2 py-1.5 text-xs border-b border-gray-100 text-center w-12 min-w-[3rem] ${hmClass}">${displayVal}</td>`;
+                });
+                
+                grandTotal += rowTotal;
+                
+                tbodyHtml += `
+                    <tr class="transition-colors group">
+                        <td class="sticky left-0 z-10 bg-white group-hover:bg-blue-50 px-3 py-1.5 text-xs font-bold border-b border-gray-100 shadow-[1px_0_0_0_#f3f4f6] whitespace-nowrap" style="color: ${trace.line.color}">${trace.name}</td>
+                        ${cellsHtml}
+                        <td class="sticky right-0 z-10 bg-gray-50 group-hover:bg-blue-50 px-3 py-1.5 text-xs font-bold font-mono text-gray-900 border-b border-gray-100 shadow-[-1px_0_0_0_#f3f4f6] text-center w-24">${rowTotal}</td>
+                    </tr>
+                `;
+            });
+
+            let colTotalsHtml = '';
+            columnTotals.forEach(val => {
+                let displayVal = val > 0 ? val : '-';
+                colTotalsHtml += `<td class="px-2 py-2 text-xs font-bold font-mono text-gray-800 border-t-2 border-gray-200 text-center bg-gray-50">${displayVal}</td>`;
+            });
+            
+            tbodyHtml += `
+                <tr class="bg-gray-50">
+                    <td class="sticky left-0 z-10 bg-gray-100 px-3 py-2 text-xs font-extrabold text-gray-700 uppercase tracking-wider border-t-2 border-gray-200 shadow-[1px_0_0_0_#e5e7eb] whitespace-nowrap">Total</td>
+                    ${colTotalsHtml}
+                    <td class="sticky right-0 z-10 bg-gray-200 px-3 py-2 text-xs font-extrabold font-mono text-gray-900 border-t-2 border-gray-200 shadow-[-1px_0_0_0_#d1d5db] text-center w-24">${grandTotal}</td>
+                </tr>
+            `;
+
+            document.getElementById('timelineThead').innerHTML = theadHtml;
+            document.getElementById('timelineTbody').innerHTML = tbodyHtml;
+        }
+
+        function getEventTimestamp(eventStr) {
+            if(!eventStr) return 0;
+            let str = String(eventStr).trim();
+            if(str.length >= 17) {
+                let DD = str.substring(0, 2);
+                let MM = str.substring(2, 4);
+                let YYYY = str.substring(4, 8);
+                let hh = str.substring(9, 11);
+                let mm = str.substring(12, 14);
+                let ss = str.substring(15, 17);
+                return new Date(`${YYYY}-${MM}-${DD}T${hh}:${mm}:${ss}`).getTime();
+            }
+            return 0; // Fallback
+        }
+
+        function updateDetails(data) {
+            const tbody = document.getElementById('detailsTableBody');
+            tbody.innerHTML = ""; 
+            
+            // Extract the valid BagTag IDs from the dynamically filtered data
+            let validBagIds = new Set();
+            data.forEach(row => {
+                if (row.BAGTAGID) validBagIds.add(row.BAGTAGID);
+            });
+
+            // 1. Group data by BAGTAGID using GLOBAL DATA to guarantee full chronological tracking paths
+            let bagsGroup = {};
+            globalData.forEach(row => {
+                if(row.BAGTAGID && validBagIds.has(row.BAGTAGID)) {
+                    if(!bagsGroup[row.BAGTAGID]) bagsGroup[row.BAGTAGID] = [];
+                    bagsGroup[row.BAGTAGID].push(row);
+                }
+            });
+
+            let processedBags = [];
+            const isTerminal = (val) => {
+                if(!val) return false;
+                let v = val.trim().toUpperCase();
+                return v.startsWith('MA') || v.startsWith('MB') || v.startsWith('MC');
+            };
+
+            // 2. Process complete bag conditions 
+            for (let bagId in bagsGroup) {
+                let records = bagsGroup[bagId];
+                
+                // Sort chronologically based on EVENT
+                records.sort((a, b) => getEventTimestamp(a.EVENT) - getEventTimestamp(b.EVENT));
+
+                // Find earliest record matching conditions: STD, ASSIGNED CHUTE, Flight
+                let baseIndex = -1;
+                for (let i = 0; i < records.length; i++) {
+                    let r = records[i];
+                    let flightKey = Object.keys(r).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
+                    let flightVal = flightKey ? r[flightKey] : null;
+                    
+                    if (r.STD && r.TDP_IDCURRNAME && flightVal) {
+                        baseIndex = i;
+                        break;
+                    }
+                }
+
+                // Compile 1 complete bag if constraints met
+                if (baseIndex !== -1) {
+                    let baseRecord = records[baseIndex];
+                    let assignedChute = baseRecord.TDP_IDCURRNAME;
+                    let cleanAssignedChute = assignedChute.trim().toUpperCase();
+                    
+                    let displayPath = [];
+                    let rawPath = []; // Clean path collection natively without HTML for exports
+                    
+                    let terminalFound = false;
+                    let lastRecordProcessed = baseRecord;
+
+                    // Tooltip Render Functions
+                    const renderStaticChute = (name, tooltip) => {
+                        return `<span class="relative inline-block group cursor-help border-b border-dotted border-gray-500">${name}<span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black text-white text-xs font-semibold rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-[100]">${tooltip}</span></span>`;
+                    };
+
+                    const renderDynamicChute = (name, event, hrs) => {
+                        let e = event || '-';
+                        let h = hrs || '-';
+                        return `<span class="relative inline-block group cursor-help border-b border-dotted border-gray-500">${name}<span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black text-white text-xs font-normal rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-[100] text-left leading-tight border border-gray-700">Time: <span class="font-mono text-gray-300">${e}</span><br/>Hrs to STD: <span class="font-mono text-gray-300">${h}</span></span></span>`;
+                    };
+
+                    // Hybrid renderer providing static Title + Dynamic timing variables together
+                    const renderHybridChute = (name, title, event, hrs) => {
+                        let e = event || '-';
+                        let h = hrs || '-';
+                        return `<span class="relative inline-block group cursor-help border-b border-dotted border-gray-500">${name}<span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black text-white text-xs font-normal rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-[100] text-left leading-tight border border-gray-700"><div class="font-bold text-gray-100 mb-1 pb-1 border-b border-gray-700">${title}</div>Time: <span class="font-mono text-gray-300">${e}</span><br/>Hrs to STD: <span class="font-mono text-gray-300">${h}</span></span></span>`;
+                    };
+
+                    // Tracking Logics
+                    if (cleanAssignedChute === 'MES EB2') {
+                        displayPath.push(renderStaticChute('MES EB2', 'ES30-05'));
+                        rawPath.push('MES EB2');
+                        
+                        if (baseIndex + 1 < records.length) {
+                            let nextRecord = records[baseIndex + 1];
+                            let nextChute = nextRecord.TDP_IDCURRNAME;
+                            if (nextChute) {
+                                displayPath.push(renderDynamicChute(nextChute.trim(), nextRecord.EVENT, nextRecord['HOURS BEFORE STD']));
+                                rawPath.push(nextChute.trim());
+                                lastRecordProcessed = nextRecord;
+                                if (isTerminal(nextChute)) terminalFound = true;
+                            }
+                        }
+                    } 
+                    else if (cleanAssignedChute === 'EBS' || cleanAssignedChute === 'MES EBS') {
+                        displayPath.push(renderStaticChute('MES EBS', 'ES26-15'));
+                        rawPath.push('MES EBS');
+                        let lastRawName = 'EBS';
+                        for (let j = baseIndex + 1; j < records.length; j++) {
+                            let nextRecord = records[j];
+                            let nextVal = nextRecord.TDP_IDCURRNAME;
+                            if (nextVal) {
+                                let cleanNextVal = nextVal.trim().toUpperCase();
+                                
+                                if (cleanNextVal !== lastRawName && cleanNextVal !== 'EBS' && cleanNextVal !== 'MES EBS') {
+                                    displayPath.push(renderDynamicChute(nextVal.trim(), nextRecord.EVENT, nextRecord['HOURS BEFORE STD']));
+                                    rawPath.push(nextVal.trim());
+                                    lastRecordProcessed = nextRecord;
+                                    lastRawName = cleanNextVal;
+                                    
+                                    if (isTerminal(cleanNextVal)) {
+                                        terminalFound = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Prefix EB2_ES, MA, MB, MC Logic (Injected ES26-15 displaying as MES EBS)
+                    else if (cleanAssignedChute.startsWith('EB2_ES') || isTerminal(cleanAssignedChute)) {
+                        // Prefix hybrid tooltip logic displaying 'MES EBS' with title 'ES26-15' retaining 1st event timings
+                        displayPath.push(renderHybridChute('MES EBS', 'ES26-15', baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
+                        displayPath.push(renderDynamicChute(baseRecord.TDP_IDCURRNAME.trim(), baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
+                        
+                        rawPath.push('MES EBS');
+                        rawPath.push(baseRecord.TDP_IDCURRNAME.trim());
+                        
+                        if (isTerminal(cleanAssignedChute)) terminalFound = true;
+                        let lastRawName = cleanAssignedChute;
+                        
+                        for (let j = baseIndex + 1; j < records.length; j++) {
+                            let nextRecord = records[j];
+                            let nextVal = nextRecord.TDP_IDCURRNAME;
+                            if (nextVal) {
+                                let cleanNextVal = nextVal.trim().toUpperCase();
+                                
+                                if (cleanNextVal !== lastRawName) {
+                                    displayPath.push(renderDynamicChute(nextVal.trim(), nextRecord.EVENT, nextRecord['HOURS BEFORE STD']));
+                                    rawPath.push(nextVal.trim());
+                                    lastRecordProcessed = nextRecord;
+                                    lastRawName = cleanNextVal;
+                                    
+                                    if (isTerminal(cleanNextVal)) {
+                                        terminalFound = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    } 
+                    else {
+                        displayPath.push(assignedChute); 
+                        rawPath.push(assignedChute.trim());
+                        if (isTerminal(cleanAssignedChute)) terminalFound = true;
+                    }
+
+                    // Look ahead logic: Automatically check the TDP_IDFINALNAME if it didn't naturally hit MA/MB/MC
+                    if (!terminalFound) {
+                        if (lastRecordProcessed.TDP_IDFINALNAME) {
+                            let finalName = lastRecordProcessed.TDP_IDFINALNAME.trim();
+                            if (isTerminal(finalName)) {
+                                let currentLastDisplay = "";
+                                if (lastRecordProcessed.TDP_IDCURRNAME) {
+                                    currentLastDisplay = lastRecordProcessed.TDP_IDCURRNAME.trim().toUpperCase();
+                                }
+                                // Avoid duplicate visual stacking
+                                if (finalName.toUpperCase() !== currentLastDisplay) {
+                                    displayPath.push(renderDynamicChute(finalName, lastRecordProcessed.EVENT, lastRecordProcessed['HOURS BEFORE STD']));
+                                    rawPath.push(finalName);
+                                }
+                            }
+                        }
+                    }
+
+                    // Join the compiled chute pieces
+                    let finalChuteDisplay = displayPath.join(' <span class="text-gray-400 font-bold mx-1">&rarr;</span> ');
+                    let finalRawChute = rawPath.join(' -> '); // Stripped of all HTML formatting for Excel parsing
+
+                    let flightKey = Object.keys(baseRecord).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
+                    
+                    processedBags.push({
+                        bagTagId: baseRecord.BAGTAGID,
+                        event: baseRecord.EVENT,
+                        std: baseRecord.STD,
+                        hrsBefore: baseRecord['HOURS BEFORE STD'] || '-',
+                        hourCategory: baseRecord.HOUR_CATEGORY,
+                        chuteDisplay: finalChuteDisplay, 
+                        rawChute: finalRawChute,
+                        flight: flightKey ? baseRecord[flightKey] : '-'
+                    });
+                }
+            }
+
+            // Optionally Sort Complete bags by their event time
+            processedBags.sort((a, b) => getEventTimestamp(a.event) - getEventTimestamp(b.event));
+            
+            // Assign complete processed payload securely to global context for XLSX Data extraction
+            currentDetailsData = processedBags;
+
+            // Truncate to limit DOM stress while providing high detail counts
+            const displayData = processedBags.slice(0, 500); 
+
+            displayData.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-blue-50 transition-colors cursor-pointer group/row"; 
+                let cellClass = "text-sm px-6 py-4 text-gray-700 whitespace-nowrap group-hover/row:text-blue-900";
+                
+                let hrsClass = cellClass;
+                
+                if (row.hourCategory === 'Negative' || row.hrsBefore.includes('-')) {
+                    hrsClass += " text-red-600 font-bold bg-red-50"; 
+                } else if (row.hourCategory === 'more than 4 hours') {
+                    hrsClass += " text-green-600 font-bold bg-green-50";
+                } else if (row.hourCategory === '1 hour to 4 hours') {
+                    hrsClass += " text-yellow-600 font-bold bg-yellow-50";
+                } else if (row.hourCategory === 'less than 1 hour') {
+                    hrsClass += " text-orange-600 font-bold bg-orange-50";
+                }
+
+                tr.innerHTML = `
+                    <td class="${cellClass} font-mono">${row.bagTagId || '-'}</td>
+                    <td class="${cellClass} font-mono">${row.event || '-'}</td>
+                    <td class="${cellClass} font-mono">${row.std || '-'}</td>
+                    <td class="${hrsClass}">${row.hrsBefore}</td>
+                    <td class="${cellClass} font-sans">${row.chuteDisplay}</td>
+                    <td class="${cellClass} font-bold text-gray-800 group-hover/row:text-blue-900">${row.flight}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            let countText = `Showing ${displayData.length} unique bags`;
+            if (processedBags.length > 500) countText += ` (Filtered down from ${processedBags.length} complete bags)`;
+            document.getElementById('detailsCount').innerText = countText;
+        }
+
+// ==========================================
+        // AUTO-LOAD EXCEL FILE FROM GITHUB
+        // ==========================================
+        window.addEventListener('DOMContentLoaded', () => {
+            // Ensure this perfectly matches the exact name of the file you upload to GitHub
+            const defaultFileName = 'EB_Bag_Analysis.xlsx'; 
+
+            document.getElementById('loadingPopup').classList.remove('hidden');
+
+            fetch(defaultFileName)
+                .then(response => {
+                    if (!response.ok) throw new Error("File not found on server.");
+                    return response.arrayBuffer();
+                })
+                .then(data => {
+                    const workbook = XLSX.read(new Uint8Array(data), {type: 'array'});
+                    let sheetName = workbook.SheetNames.includes('20260828_BagTracking') ? '20260828_BagTracking' : workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[sheetName];
+                    
+                    let rawData = XLSX.utils.sheet_to_json(sheet);
+                    globalData = rawData.filter(row => row.BAGTAGID && /\d/.test(String(row.BAGTAGID)));
+                    
+                    populateFilters(globalData);
+                    applyFilters();
+                    document.getElementById('loadingPopup').classList.add('hidden');
+                })
+                .catch(err => {
+                    console.log("Auto-load skipped or failed. Awaiting manual upload.", err);
+                    document.getElementById('loadingPopup').classList.add('hidden');
+                });
+        });
+
+        // ==========================================
+        // REGISTER SERVICE WORKER FOR MOBILE APP INSTALL
+        // ==========================================
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(reg => {
+                    console.log('Service Worker Registered!', reg);
+                }).catch(err => console.log('Service Worker failed', err));
+            });
+        }
+    </script>
+</body>
+</html>
