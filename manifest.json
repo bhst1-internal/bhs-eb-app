@@ -1,6 +1,6 @@
 {
-  "name": "BHS Operation Dashboard",
-  "short_name": "EB Dashboard",
+  "name": "BHS Operation Dashboard - Early Bag (EB)",
+  "short_name": "BHS EB",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f3f4f6",
