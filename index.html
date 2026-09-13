@@ -386,7 +386,13 @@
             const list = document.getElementById(`${key}-list`);
             let html = '';
             
-            let sourceArray = Array.isArray(dataSet) ? dataSet : [...dataSet].sort();
+            // If it's the hours array, don't re-sort alphabetically, use the exact provided order
+            let sourceArray;
+            if (key === 'hours') {
+                sourceArray = dataSet; 
+            } else {
+                sourceArray = Array.isArray(dataSet) ? dataSet : [...dataSet].sort();
+            }
             
             sourceArray.forEach(item => {
                 html += `<div class="p-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 text-gray-600 flex items-center gap-2 font-mono" onclick="toggleSingleCb(this, '${key}', '${title}')">
@@ -531,6 +537,7 @@
             return `${str.substring(4,8)}-${str.substring(2,4)}-${str.substring(0,2)}`; 
         }
 
+        // Keep core category mapper intact for timeline separation
         function getHoursCategory(timeStr) {
             if(!timeStr) return "Unknown";
             if(String(timeStr).includes('-')) return "Negative";
@@ -546,7 +553,7 @@
         }
 
         function populateFilters(data) {
-            const dates = new Set(), flights = new Set(), statuses = new Set(), hbs = new Set(), hoursCats = new Set();
+            const dates = new Set(), flights = new Set(), statuses = new Set(), hbs = new Set();
             data.forEach(row => {
                 let d = parseDateString(row.EVENT);
                 if(d) dates.add(d);
@@ -557,7 +564,6 @@
                 if(row.HBSSTATUS) hbs.add(row.HBSSTATUS);
                 
                 row.HOUR_CATEGORY = getHoursCategory(row['HOURS BEFORE STD']);
-                if (row.HOUR_CATEGORY !== "Unknown") hoursCats.add(row.HOUR_CATEGORY);
             });
 
             const sortedDates = [...dates].sort();
@@ -578,8 +584,8 @@
             populateCustomDropdown('status', statuses, 'Statuses');
             populateCustomDropdown('security', hbs, 'Security');
             
-            // Fixed sort order specifically matching your requirements
-            const sortedHours = ["< 1 hour", "1 - 4 hours", "> 4 hours", "Negative"].filter(h => hoursCats.has(h));
+            // Render specific array order including overlapping logic buckets
+            const sortedHours = ["< 1 hour", "0 - 2 hours", "2 - 4 hours", "1 - 4 hours", "> 4 hours", "Negative"];
             populateCustomDropdown('hours', sortedHours, 'Times');
         }
 
@@ -599,11 +605,36 @@
 
                 const validDate = (!startD || rowDate >= startD) && (!endD || rowDate <= endD);
 
+                // Advanced numeric hour parsing specifically for the overlapping filter selections
+                let matchHours = false;
+                if (hoursF.includes("ALL")) {
+                    matchHours = true;
+                } else {
+                    let timeStr = row['HOURS BEFORE STD'];
+                    let isNeg = timeStr && String(timeStr).includes('-');
+                    let h = 0;
+                    if (!isNeg && timeStr) {
+                        let parts = String(timeStr).split(':');
+                        if (parts.length >= 2) {
+                            h = parseInt(parts[0], 10) + (parseInt(parts[1], 10) / 60);
+                        }
+                    }
+                    
+                    if (isNeg && hoursF.includes("Negative")) matchHours = true;
+                    if (!isNeg) {
+                        if (hoursF.includes("< 1 hour") && h >= 0 && h < 1) matchHours = true;
+                        if (hoursF.includes("0 - 2 hours") && h >= 0 && h <= 2) matchHours = true;
+                        if (hoursF.includes("2 - 4 hours") && h > 2 && h <= 4) matchHours = true;
+                        if (hoursF.includes("1 - 4 hours") && h >= 1 && h <= 4) matchHours = true;
+                        if (hoursF.includes("> 4 hours") && h > 4) matchHours = true;
+                    }
+                }
+
                 return validDate &&
                        (flightsF.includes("ALL") || flightsF.includes(rowFlight)) &&
                        (statusesF.includes("ALL") || statusesF.includes(row.BAGSTATUS)) &&
                        (securityF.includes("ALL") || securityF.includes(row.HBSSTATUS)) &&
-                       (hoursF.includes("ALL") || hoursF.includes(row.HOUR_CATEGORY));
+                       matchHours;
             });
 
             let statusText = document.getElementById('status-text').innerText;
@@ -1073,7 +1104,7 @@
                 
                 // First attempt: Find a filtered record with complete tracking info (Chute & Flight)
                 for (let i = 0; i < records.length; i++) {
-                    if (data.includes(records[i])) { // Ensure it is exactly part of the filtered timeline dataset
+                    if (data.includes(records[i])) { 
                         let flightKey = Object.keys(records[i]).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
                         if (records[i].STD && records[i].TDP_IDCURRNAME && flightKey && records[i][flightKey]) {
                             baseIndex = i;
