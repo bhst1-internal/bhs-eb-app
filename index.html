@@ -91,7 +91,6 @@
                         <svg class="w-4 h-4 text-gray-500 flex-shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                     </div>
                     <div id="flight-menu" class="custom-menu absolute z-50 w-full bg-white border border-gray-300 rounded shadow-lg mt-1 hidden flex-col overflow-hidden text-xs">
-                        <!-- New Search Tab -->
                         <div class="p-2 border-b bg-gray-50">
                             <input type="text" id="flight-search" onkeyup="handleFlightSearch(this.value)" placeholder="Search keywords (e.g. MH)..." class="w-full border border-gray-300 p-1.5 rounded outline-none focus:ring-1 focus:ring-blue-500">
                             <div id="flight-search-action" class="mt-1 hidden"></div>
@@ -168,7 +167,6 @@
                 </div>
             </div>
 
-            <!-- UPDATED ORANGE KPI CARD -->
             <div class="bg-orange-600 text-white p-3 rounded-lg shadow text-center relative group cursor-help transition hover:bg-orange-700 flex flex-col justify-center">
                 <h4 class="text-xs uppercase opacity-80 mb-1" id="kpi-total-bags-interval-label">Total Bags</h4>
                 <div class="text-base font-bold mt-1 tracking-wide flex justify-center items-center">
@@ -295,11 +293,10 @@
 
     <script>
         let globalData = [];
-        let currentDetailsData = []; // Store fully processed records for flawless excel exporting
+        let currentDetailsData = []; 
         let isOverlayMode = false;
-        let isDataTableVisible = false; // Data table defaults to hidden
+        let isDataTableVisible = false;
 
-        // Handles typing into the Flight search tab
         function handleFlightSearch(val) {
             const actionDiv = document.getElementById('flight-search-action');
             if (val.trim() === '') {
@@ -312,18 +309,15 @@
             actionDiv.innerHTML = `<button onclick="selectFlightPrefix('${keyword}')" class="w-full text-left px-2 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold rounded transition-colors text-xs border border-blue-200 shadow-sm">${keyword} only</button>`;
         }
 
-        // Applies the selected keyword prefix to checkboxes, keeping prior selections
         function selectFlightPrefix(keyword) {
             const allCb = document.getElementById('chk-all-flight');
             const checkboxes = document.querySelectorAll('.flight-cb');
             
-            // If "All Flights" was previously checked, clear everything first 
             if (allCb.checked) {
                 allCb.checked = false;
                 checkboxes.forEach(cb => cb.checked = false);
             }
             
-            // Add checkboxes that match the new search keyword (accumulates)
             checkboxes.forEach(cb => {
                 if (cb.value.toUpperCase().startsWith(keyword)) {
                     cb.checked = true;
@@ -334,14 +328,12 @@
             applyFilters();
         }
 
-        // Reset All Filters function
         function resetFilters() {
             const startInput = document.getElementById('filter-start-date');
             const endInput = document.getElementById('filter-end-date');
             if(startInput.min) startInput.value = startInput.min;
             if(endInput.max) endInput.value = endInput.max;
 
-            // Reset all 4 dropdowns dynamically
             ['flight', 'status', 'security', 'hours'].forEach(key => {
                 let title = key === 'flight' ? 'Flights' : (key === 'status' ? 'Statuses' : (key === 'security' ? 'Security' : 'Times'));
                 document.getElementById(`chk-all-${key}`).checked = true;
@@ -351,7 +343,6 @@
 
             document.getElementById('intervalSelect').value = "1h";
             
-            // Reset Flight Search 
             if(document.getElementById('flight-search')) {
                 document.getElementById('flight-search').value = '';
                 document.getElementById('flight-search-action').classList.add('hidden');
@@ -360,24 +351,19 @@
             applyFilters();
         }
 
-        // Custom Dropdown UI Logic
         function toggleDropdown(menuId) {
             const menu = document.getElementById(menuId);
             const isHidden = menu.classList.contains('hidden');
-            // Close all
             document.querySelectorAll('.custom-menu').forEach(m => m.classList.add('hidden'));
-            // Open clicked
             if(isHidden) menu.classList.remove('hidden');
         }
 
-        // Close dropdowns if clicking outside
         document.addEventListener('click', e => {
             if(!e.target.closest('.custom-dropdown-container') && !e.target.closest('.border-t-4')) {
                 document.querySelectorAll('.custom-menu').forEach(m => m.classList.add('hidden'));
             }
         });
 
-        // Toggle Data Table Visibility
         function toggleDataTable() {
             isDataTableVisible = !isDataTableVisible;
             const container = document.getElementById('timelineTableContainer');
@@ -399,7 +385,10 @@
         function populateCustomDropdown(key, dataSet, title) {
             const list = document.getElementById(`${key}-list`);
             let html = '';
-            [...dataSet].sort().forEach(item => {
+            
+            let sourceArray = Array.isArray(dataSet) ? dataSet : [...dataSet].sort();
+            
+            sourceArray.forEach(item => {
                 html += `<div class="p-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 text-gray-600 flex items-center gap-2 font-mono" onclick="toggleSingleCb(this, '${key}', '${title}')">
                     <input type="checkbox" value="${item}" checked class="${key}-cb pointer-events-none w-3.5 h-3.5 text-blue-600 rounded border-gray-300"> <span>${item}</span>
                 </div>`;
@@ -438,7 +427,6 @@
             } else if (checkedCbs.length === 0) {
                 textEl.innerText = `No ${title} Selected`;
             } else if (key === 'status') {
-                // Combine actual selected Bag Status values using comma separation
                 textEl.innerText = Array.from(checkedCbs).map(cb => cb.value).join(', ');
             } else if (checkedCbs.length === 1) {
                 textEl.innerText = checkedCbs[0].value;
@@ -453,7 +441,6 @@
             return Array.from(document.querySelectorAll(`.${key}-cb:checked`)).map(c => c.value);
         }
 
-        // Export Function to pull details purely dynamically from processing into a clean .xlsx
         function exportDetailsToExcel() {
             if (!currentDetailsData || currentDetailsData.length === 0) {
                 alert("No data available to export.");
@@ -477,7 +464,6 @@
             XLSX.writeFile(wb, "EB_Details_Export.xlsx");
         }
 
-        // Save entire Timeline section as JPEG
         function saveTimelineAsJPEG() {
             const element = document.getElementById('timelineSection');
             const btn = document.getElementById('saveJpegBtn');
@@ -517,10 +503,8 @@
             const file = e.target.files[0];
             if (!file) return;
 
-            // Show Interactive In-Progress Popup
             document.getElementById('loadingPopup').classList.remove('hidden');
 
-            // Use setTimeout to allow the browser to paint the modal before parsing freezes thread
             setTimeout(() => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
@@ -530,13 +514,11 @@
                     const sheet = workbook.Sheets[sheetName];
                     
                     let rawData = XLSX.utils.sheet_to_json(sheet);
-                    // Strictly exclude any row where BAGTAGID does not contain at least one digit
                     globalData = rawData.filter(row => row.BAGTAGID && /\d/.test(String(row.BAGTAGID)));
                     
                     populateFilters(globalData);
                     applyFilters();
 
-                    // Hide Popup
                     document.getElementById('loadingPopup').classList.add('hidden');
                 };
                 reader.readAsArrayBuffer(file);
@@ -551,16 +533,15 @@
 
         function getHoursCategory(timeStr) {
             if(!timeStr) return "Unknown";
-            // Strictly assign negative bags to Negative trace
             if(String(timeStr).includes('-')) return "Negative";
 
             let parts = String(timeStr).split(':');
             if(parts.length < 2) return "Unknown";
             let hours = parseInt(parts[0], 10) + (parseInt(parts[1], 10) / 60);
             
-            if(hours >= 0 && hours < 1) return "less than 1 hour";
-            if(hours >= 1 && hours <= 4) return "1 hour to 4 hours";
-            if(hours > 4) return "more than 4 hours";
+            if(hours >= 0 && hours < 1) return "< 1 hour";
+            if(hours >= 1 && hours <= 4) return "1 - 4 hours";
+            if(hours > 4) return "> 4 hours";
             return "Unknown";
         }
 
@@ -579,7 +560,6 @@
                 if (row.HOUR_CATEGORY !== "Unknown") hoursCats.add(row.HOUR_CATEGORY);
             });
 
-            // Date Pickers Population using native HTML5 inputs
             const sortedDates = [...dates].sort();
             const startInput = document.getElementById('filter-start-date');
             const endInput = document.getElementById('filter-end-date');
@@ -594,13 +574,12 @@
                 endInput.value = sortedDates[sortedDates.length - 1];
             }
 
-            // Populate ALL Custom Dropdowns
             populateCustomDropdown('flight', flights, 'Flights');
             populateCustomDropdown('status', statuses, 'Statuses');
             populateCustomDropdown('security', hbs, 'Security');
             
-            // Custom sort for Hours to display logically
-            const sortedHours = ["Negative", "less than 1 hour", "1 hour to 4 hours", "more than 4 hours"].filter(h => hoursCats.has(h));
+            // Fixed sort order specifically matching your requirements
+            const sortedHours = ["< 1 hour", "1 - 4 hours", "> 4 hours", "Negative"].filter(h => hoursCats.has(h));
             populateCustomDropdown('hours', sortedHours, 'Times');
         }
 
@@ -620,7 +599,6 @@
 
                 const validDate = (!startD || rowDate >= startD) && (!endD || rowDate <= endD);
 
-                // Strict AND logic requiring ALL 6 filter criteria to be met
                 return validDate &&
                        (flightsF.includes("ALL") || flightsF.includes(rowFlight)) &&
                        (statusesF.includes("ALL") || statusesF.includes(row.BAGSTATUS)) &&
@@ -628,7 +606,6 @@
                        (hoursF.includes("ALL") || hoursF.includes(row.HOUR_CATEGORY));
             });
 
-            // Dynamically mount dynamic Title Status injection in Details
             let statusText = document.getElementById('status-text').innerText;
             document.getElementById('detailsHeaderTitle').innerHTML = `EB DETAILS: <span class="text-blue-600">${statusText.toUpperCase()}</span>`;
 
@@ -691,8 +668,6 @@
 
             const uniqueBags = new Set(data.map(d => d.BAGTAGID)).size;
             const flightsSet = new Set();
-            
-            // For Flight Assignment tracking (MTB vs SAT)
             const flightDestinations = {};
             
             let totalMinutes = 0, countMinutes = 0;
@@ -726,7 +701,6 @@
                 }
             });
 
-            // Calculate MTB and SAT flight assignments
             let mtbCount = 0, satCount = 0;
             flightsSet.forEach(f => {
                 if (flightDestinations[f] === 'MTB') mtbCount++;
@@ -734,11 +708,9 @@
             });
 
             const avgMinutes = countMinutes > 0 ? totalMinutes / countMinutes : null;
-
             const interval = document.getElementById('intervalSelect').value;
             const evalInterval = interval === 'ALL' ? '15m' : interval;
             
-            // UPDATED JS LOGIC FOR THE NEW KPI
             const counts = getBucketCounts(data, evalInterval, false);
             const numBuckets = Object.keys(counts).length;
             
@@ -754,21 +726,17 @@
             }
             const avgBags = numBuckets > 0 ? Math.round(uniqueBags / numBuckets) : 0;
 
-            // Standard DOM Updates
             document.getElementById('kpi-bags').innerText = uniqueBags;
             document.getElementById('kpi-flights').innerText = flightsSet.size;
             
-            // Flight Assignments DOM
             document.getElementById('tooltip-flights-mtb').innerHTML = `<span class="text-gray-400">MTB:</span> <span class="font-bold text-blue-300 ml-1">${mtbCount}</span>`;
             document.getElementById('tooltip-flights-sat').innerHTML = `<span class="text-gray-400">SAT:</span> <span class="font-bold text-blue-300 ml-1">${satCount}</span>`;
 
-            // Dynamic Interval Updates
             document.getElementById('kpi-avg-bags').innerText = avgBags;
             document.getElementById('kpi-max-bags').innerText = maxBags;
             let intervalLabel = interval === '1d' ? 'Daily' : (interval === '1h' ? 'Hourly' : '15-Min');
             document.getElementById('kpi-total-bags-interval-label').innerText = `Total Bags (${intervalLabel})`;
 
-            // Populate the Date/Time tooltip mapping for Max Recorded value
             document.getElementById('tooltip-total-bags-interval').innerHTML = `
                 <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide text-left">Based on Interval</div>
                 <div class="text-gray-400 mb-1">Updates based on selected timeline interval.</div>
@@ -776,7 +744,6 @@
                 <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-[1px] border-[6px] border-transparent border-t-gray-800"></div>
             `;
 
-            // Time Breakdown Values & Dynamic Coloring mapped against Dark bg-gray-800 context
             let maxText = maxMin !== -Infinity ? minutesToTime(maxMin) : '-';
             let minText = minMin !== Infinity ? minutesToTime(minMin) : '-';
 
@@ -804,7 +771,6 @@
             minEl.innerText = minText;
             minEl.className = `text-xl font-mono ${minColor}`;
 
-            // HTML Tooltip Content Override applying dynamic color bindings to BAGTAGID displays
             document.getElementById('tooltip-maxmin-std').innerHTML = `
                 <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide">Extremes Breakdown</div>
                 <div class="mb-1"><span class="text-gray-400">Max Bag:</span> <span class="font-bold ${maxColor} ml-1 font-mono">${maxBag}</span></div>
@@ -911,35 +877,29 @@
                 layout.xaxis.hoverformat = '%d/%m %H:%M'; 
 
                 let dataNegative = data.filter(d => d.HOUR_CATEGORY === 'Negative');
-                let dataLess1 = data.filter(d => d.HOUR_CATEGORY === 'less than 1 hour');
-                let data1to4 = data.filter(d => d.HOUR_CATEGORY === '1 hour to 4 hours');
-                let dataMore4 = data.filter(d => d.HOUR_CATEGORY === 'more than 4 hours');
+                let dataLess1 = data.filter(d => d.HOUR_CATEGORY === '< 1 hour');
+                let data1to4 = data.filter(d => d.HOUR_CATEGORY === '1 - 4 hours');
+                let dataMore4 = data.filter(d => d.HOUR_CATEGORY === '> 4 hours');
 
-                // Generate completely isolated traces to match the exact table formatting
-                if (dataMore4.length > 0) traces.push(generateTrace(dataMore4, baseInterval, '> 4 hours', '#22c55e', 'rgba(34, 197, 94, 0.15)', false)); // Green
-                if (data1to4.length > 0) traces.push(generateTrace(data1to4, baseInterval, '1 - 4 hours', '#eab308', 'rgba(234, 179, 8, 0.15)', false)); // Yellow
-                if (dataLess1.length > 0) traces.push(generateTrace(dataLess1, baseInterval, '< 1 hour', '#f97316', 'rgba(249, 115, 22, 0.15)', false)); // Orange
-                if (dataNegative.length > 0) traces.push(generateTrace(dataNegative, baseInterval, 'Negative', '#ef4444', 'rgba(239, 68, 68, 0.15)', false)); // Red
+                if (dataMore4.length > 0) traces.push(generateTrace(dataMore4, baseInterval, '> 4 hours', '#22c55e', 'rgba(34, 197, 94, 0.15)', false)); 
+                if (data1to4.length > 0) traces.push(generateTrace(data1to4, baseInterval, '1 - 4 hours', '#eab308', 'rgba(234, 179, 8, 0.15)', false)); 
+                if (dataLess1.length > 0) traces.push(generateTrace(dataLess1, baseInterval, '< 1 hour', '#f97316', 'rgba(249, 115, 22, 0.15)', false)); 
+                if (dataNegative.length > 0) traces.push(generateTrace(dataNegative, baseInterval, 'Negative', '#ef4444', 'rgba(239, 68, 68, 0.15)', false)); 
             }
             
             Plotly.newPlot('timelineChart', traces, layout, {responsive: true});
-            
-            // Generate Data Table Matrix
             updateTimelineTable(traces);
         }
-
-        // --- Details Section & Matrix Helper Functions ---
 
         function updateTimelineTable(traces) {
             let interval = document.getElementById('intervalSelect').value;
             let isHourly = interval === '1h';
             let is15m = interval === '15m' || interval === 'ALL';
 
-            // New Heatmap Function logically mapping the row traces (Green/Yellow/Orange/Red) against the Threshold limits
             function getHeatmapClass(val, traceName) {
                 if (val <= 0) return 'bg-white text-gray-300';
                 
-                let level = 0; // 1 = light, 2 = medium, 3 = dark
+                let level = 0; 
                 if (isHourly) {
                     if (val < 100) level = 1;
                     else if (val <= 200) level = 2;
@@ -949,7 +909,7 @@
                     else if (val <= 50) level = 2;
                     else level = 3;
                 } else {
-                    level = 2; // Medium fallback for "Daily"
+                    level = 2; 
                 }
 
                 if (traceName.includes('> 4 hours')) {
@@ -970,7 +930,6 @@
                     if (level === 3) return 'bg-red-600 text-white font-bold';
                 }
                 
-                // Fallback style for Overlay trace dates (Blue gradient)
                 if (level === 1) return 'bg-indigo-100 text-indigo-800 font-bold';
                 if (level === 2) return 'bg-indigo-300 text-indigo-900 font-bold';
                 if (level === 3) return 'bg-indigo-600 text-white font-bold';
@@ -1083,13 +1042,12 @@
             const tbody = document.getElementById('detailsTableBody');
             tbody.innerHTML = ""; 
             
-            // Extract the valid BagTag IDs from the dynamically filtered data
             let validBagIds = new Set();
             data.forEach(row => {
                 if (row.BAGTAGID) validBagIds.add(row.BAGTAGID);
             });
 
-            // 1. Group data by BAGTAGID using GLOBAL DATA to guarantee full chronological tracking paths
+            // Group data by BAGTAGID using GLOBAL DATA to guarantee full chronological tracking paths
             let bagsGroup = {};
             globalData.forEach(row => {
                 if(row.BAGTAGID && validBagIds.has(row.BAGTAGID)) {
@@ -1105,39 +1063,47 @@
                 return v.startsWith('MA') || v.startsWith('MB') || v.startsWith('MC');
             };
 
-            // 2. Process complete bag conditions 
             for (let bagId in bagsGroup) {
                 let records = bagsGroup[bagId];
-                
-                // Sort chronologically based on EVENT
                 records.sort((a, b) => getEventTimestamp(a.EVENT) - getEventTimestamp(b.EVENT));
 
-                // Find earliest record matching conditions: STD, ASSIGNED CHUTE, Flight
+                // Find a base record strictly among the records that passed the active filters.
                 let baseIndex = -1;
+                let baseRecord = null;
+                
+                // First attempt: Find a filtered record with complete tracking info (Chute & Flight)
                 for (let i = 0; i < records.length; i++) {
-                    let r = records[i];
-                    let flightKey = Object.keys(r).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
-                    let flightVal = flightKey ? r[flightKey] : null;
-                    
-                    if (r.STD && r.TDP_IDCURRNAME && flightVal) {
-                        baseIndex = i;
-                        break;
+                    if (data.includes(records[i])) { // Ensure it is exactly part of the filtered timeline dataset
+                        let flightKey = Object.keys(records[i]).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
+                        if (records[i].STD && records[i].TDP_IDCURRNAME && flightKey && records[i][flightKey]) {
+                            baseIndex = i;
+                            baseRecord = records[i];
+                            break;
+                        }
                     }
                 }
 
-                // Compile 1 complete bag if constraints met
-                if (baseIndex !== -1) {
-                    let baseRecord = records[baseIndex];
-                    let assignedChute = baseRecord.TDP_IDCURRNAME;
+                // Second attempt: Fallback to the first filtered record available if none have full tracking info
+                if (baseIndex === -1) {
+                    for (let i = 0; i < records.length; i++) {
+                        if (data.includes(records[i])) {
+                            baseIndex = i;
+                            baseRecord = records[i];
+                            break;
+                        }
+                    }
+                }
+
+                if (baseIndex !== -1 && baseRecord) {
+                    let assignedChute = baseRecord.TDP_IDCURRNAME || 'UNKNOWN';
                     let cleanAssignedChute = assignedChute.trim().toUpperCase();
                     
                     let displayPath = [];
-                    let rawPath = []; // Clean path collection natively without HTML for exports
+                    let rawPath = [];
                     
                     let terminalFound = false;
                     let lastRecordProcessed = baseRecord;
 
-                    // Tooltip Render Functions
                     const renderStaticChute = (name, tooltip) => {
                         return `<span class="relative inline-block group cursor-help border-b border-dotted border-gray-500">${name}<span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black text-white text-xs font-semibold rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-[100]">${tooltip}</span></span>`;
                     };
@@ -1148,15 +1114,18 @@
                         return `<span class="relative inline-block group cursor-help border-b border-dotted border-gray-500">${name}<span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black text-white text-xs font-normal rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-[100] text-left leading-tight border border-gray-700">Time: <span class="font-mono text-gray-300">${e}</span><br/>Hrs to STD: <span class="font-mono text-gray-300">${h}</span></span></span>`;
                     };
 
-                    // Hybrid renderer providing static Title + Dynamic timing variables together
                     const renderHybridChute = (name, title, event, hrs) => {
                         let e = event || '-';
                         let h = hrs || '-';
                         return `<span class="relative inline-block group cursor-help border-b border-dotted border-gray-500">${name}<span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black text-white text-xs font-normal rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-[100] text-left leading-tight border border-gray-700"><div class="font-bold text-gray-100 mb-1 pb-1 border-b border-gray-700">${title}</div>Time: <span class="font-mono text-gray-300">${e}</span><br/>Hrs to STD: <span class="font-mono text-gray-300">${h}</span></span></span>`;
                     };
 
-                    // Tracking Logics
-                    if (cleanAssignedChute === 'MES EB2') {
+                    // Handle edge case dynamically gracefully 
+                    if (cleanAssignedChute === 'UNKNOWN') {
+                        displayPath.push('UNKNOWN');
+                        rawPath.push('UNKNOWN');
+                    }
+                    else if (cleanAssignedChute === 'MES EB2') {
                         displayPath.push(renderStaticChute('MES EB2', 'ES30-05'));
                         rawPath.push('MES EB2');
                         
@@ -1195,9 +1164,7 @@
                             }
                         }
                     }
-                    // Prefix EB2_ES, MA, MB, MC Logic (Injected ES26-15 displaying as MES EBS)
                     else if (cleanAssignedChute.startsWith('EB2_ES') || isTerminal(cleanAssignedChute)) {
-                        // Prefix hybrid tooltip logic displaying 'MES EBS' with title 'ES26-15' retaining 1st event timings
                         displayPath.push(renderHybridChute('MES EBS', 'ES26-15', baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
                         displayPath.push(renderDynamicChute(baseRecord.TDP_IDCURRNAME.trim(), baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
                         
@@ -1233,7 +1200,6 @@
                         if (isTerminal(cleanAssignedChute)) terminalFound = true;
                     }
 
-                    // Look ahead logic: Automatically check the TDP_IDFINALNAME if it didn't naturally hit MA/MB/MC
                     if (!terminalFound) {
                         if (lastRecordProcessed.TDP_IDFINALNAME) {
                             let finalName = lastRecordProcessed.TDP_IDFINALNAME.trim();
@@ -1242,7 +1208,6 @@
                                 if (lastRecordProcessed.TDP_IDCURRNAME) {
                                     currentLastDisplay = lastRecordProcessed.TDP_IDCURRNAME.trim().toUpperCase();
                                 }
-                                // Avoid duplicate visual stacking
                                 if (finalName.toUpperCase() !== currentLastDisplay) {
                                     displayPath.push(renderDynamicChute(finalName, lastRecordProcessed.EVENT, lastRecordProcessed['HOURS BEFORE STD']));
                                     rawPath.push(finalName);
@@ -1251,32 +1216,28 @@
                         }
                     }
 
-                    // Join the compiled chute pieces
                     let finalChuteDisplay = displayPath.join(' <span class="text-gray-400 font-bold mx-1">&rarr;</span> ');
-                    let finalRawChute = rawPath.join(' -> '); // Stripped of all HTML formatting for Excel parsing
+                    let finalRawChute = rawPath.join(' -> ');
 
                     let flightKey = Object.keys(baseRecord).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
                     
                     processedBags.push({
                         bagTagId: baseRecord.BAGTAGID,
                         event: baseRecord.EVENT,
-                        std: baseRecord.STD,
+                        std: baseRecord.STD || '-',
                         hrsBefore: baseRecord['HOURS BEFORE STD'] || '-',
                         hourCategory: baseRecord.HOUR_CATEGORY,
                         chuteDisplay: finalChuteDisplay, 
                         rawChute: finalRawChute,
-                        flight: flightKey ? baseRecord[flightKey] : '-'
+                        flight: flightKey && baseRecord[flightKey] ? baseRecord[flightKey] : '-'
                     });
                 }
             }
 
-            // Optionally Sort Complete bags by their event time
             processedBags.sort((a, b) => getEventTimestamp(a.event) - getEventTimestamp(b.event));
             
-            // Assign complete processed payload securely to global context for XLSX Data extraction
             currentDetailsData = processedBags;
 
-            // Truncate to limit DOM stress while providing high detail counts
             const displayData = processedBags.slice(0, 500); 
 
             displayData.forEach(row => {
@@ -1288,11 +1249,11 @@
                 
                 if (row.hourCategory === 'Negative' || row.hrsBefore.includes('-')) {
                     hrsClass += " text-red-600 font-bold bg-red-50"; 
-                } else if (row.hourCategory === 'more than 4 hours') {
+                } else if (row.hourCategory === '> 4 hours') {
                     hrsClass += " text-green-600 font-bold bg-green-50";
-                } else if (row.hourCategory === '1 hour to 4 hours') {
+                } else if (row.hourCategory === '1 - 4 hours') {
                     hrsClass += " text-yellow-600 font-bold bg-yellow-50";
-                } else if (row.hourCategory === 'less than 1 hour') {
+                } else if (row.hourCategory === '< 1 hour') {
                     hrsClass += " text-orange-600 font-bold bg-orange-50";
                 }
 
@@ -1312,11 +1273,7 @@
             document.getElementById('detailsCount').innerText = countText;
         }
 
-// ==========================================
-        // AUTO-LOAD EXCEL FILE FROM GITHUB
-        // ==========================================
         window.addEventListener('DOMContentLoaded', () => {
-            // Ensure this perfectly matches the exact name of the file you upload to GitHub
             const defaultFileName = 'EB_Bag_Analysis.xlsx'; 
 
             document.getElementById('loadingPopup').classList.remove('hidden');
@@ -1344,9 +1301,6 @@
                 });
         });
 
-        // ==========================================
-        // REGISTER SERVICE WORKER FOR MOBILE APP INSTALL
-        // ==========================================
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js').then(reg => {
