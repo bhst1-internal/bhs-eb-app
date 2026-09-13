@@ -676,7 +676,7 @@
             const securityF = getSelectedCustom('security');
             const hoursF = getSelectedCustom('hours');
 
-            const filteredData = globalData.filter(row => {
+            const rawFilteredData = globalData.filter(row => {
                 let rowDate = parseDateString(row.EVENT);
                 const flightKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
                 const rowFlight = flightKey ? row[flightKey] : null;
@@ -718,12 +718,62 @@
                        matchHours;
             });
 
+            // 2. DEDUPLICATION: Ensure exactly 1 Base Record per BagTagID for synchronized counts
+            let validBagIds = new Set();
+            rawFilteredData.forEach(row => {
+                if (row.BAGTAGID) validBagIds.add(row.BAGTAGID);
+            });
+
+            let bagsGroup = {};
+            globalData.forEach(row => {
+                if(row.BAGTAGID && validBagIds.has(row.BAGTAGID)) {
+                    if(!bagsGroup[row.BAGTAGID]) bagsGroup[row.BAGTAGID] = [];
+                    bagsGroup[row.BAGTAGID].push(row);
+                }
+            });
+
+            let exactUniqueData = [];
+
+            for (let bagId in bagsGroup) {
+                let records = bagsGroup[bagId];
+                records.sort((a, b) => getEventTimestamp(a.EVENT) - getEventTimestamp(b.EVENT));
+
+                let baseIndex = -1;
+                let baseRecord = null;
+                
+                for (let i = 0; i < records.length; i++) {
+                    if (rawFilteredData.includes(records[i])) { 
+                        let flightKey = Object.keys(records[i]).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
+                        let hasLocation = records[i].TDP_IDCURRNAME || records[i].TNO_NAME;
+                        if (hasLocation && flightKey && records[i][flightKey]) {
+                            baseIndex = i;
+                            baseRecord = records[i];
+                            break;
+                        }
+                    }
+                }
+
+                if (baseIndex === -1) {
+                    for (let i = 0; i < records.length; i++) {
+                        if (rawFilteredData.includes(records[i])) {
+                            baseIndex = i;
+                            baseRecord = records[i];
+                            break;
+                        }
+                    }
+                }
+
+                if (baseRecord) {
+                    exactUniqueData.push(baseRecord);
+                }
+            }
+
             let statusText = document.getElementById('status-text').innerText;
             document.getElementById('detailsHeaderTitle').innerHTML = `EB DETAILS: <span class="text-blue-600">${statusText.toUpperCase()}</span>`;
 
-            updateKPIs(filteredData);
-            updateTimeline(filteredData);
-            updateDetails(filteredData);
+            updateKPIs(exactUniqueData);
+            updateTimeline(exactUniqueData);
+            updateDetails(exactUniqueData);
         }
 
         function getBucketCounts(data, intervalType, normalizeDate = false) {
@@ -1391,7 +1441,6 @@
             enableDragPan();
         }
 
-        // Handles dragging for BOTH the Assigned Chutes and the Timeline Table Breakdowns
         function enableDragPan() {
             const sliders = document.querySelectorAll('.chute-scroll-container, #timelineTableScroll');
             let isDown = false;
