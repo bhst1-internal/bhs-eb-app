@@ -91,6 +91,11 @@
                         <svg class="w-4 h-4 text-gray-500 flex-shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                     </div>
                     <div id="flight-menu" class="custom-menu absolute z-50 w-full bg-white border border-gray-300 rounded shadow-lg mt-1 hidden flex-col overflow-hidden text-xs">
+                        <!-- New Search Tab -->
+                        <div class="p-2 border-b bg-gray-50">
+                            <input type="text" id="flight-search" onkeyup="handleFlightSearch(this.value)" placeholder="Search keywords (e.g. MH)..." class="w-full border border-gray-300 p-1.5 rounded outline-none focus:ring-1 focus:ring-blue-500">
+                            <div id="flight-search-action" class="mt-1 hidden"></div>
+                        </div>
                         <div class="p-2 hover:bg-blue-50 cursor-pointer font-semibold border-b text-blue-600 flex items-center gap-2 bg-gray-50" onclick="toggleAllCb('flight', 'Flights')">
                             <input type="checkbox" id="chk-all-flight" checked class="pointer-events-none w-3.5 h-3.5 text-blue-600 rounded border-gray-300"> <span>All Flights</span>
                         </div>
@@ -113,22 +118,34 @@
                     </div>
                 </div>
 
-                <!-- Standard Select: Security -->
-                <div>
+                <!-- Custom Dropdown: Security -->
+                <div class="relative w-full custom-dropdown-container">
                     <label class="block text-[0.65rem] font-semibold text-gray-500 uppercase mb-1">Security</label>
-                    <select id="hbsFilter" onchange="applyFilters()" class="bg-gray-50 border border-gray-300 text-blue-700 text-xs font-semibold font-mono rounded shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-full p-2 transition-all hover:bg-gray-100 cursor-pointer"><option value="ALL">All Security</option></select>
+                    <div onclick="toggleDropdown('security-menu')" class="w-full border p-2 rounded text-xs bg-gray-50 cursor-pointer flex justify-between items-center font-semibold text-blue-700 hover:bg-gray-100 shadow-sm transition-all">
+                        <span id="security-text" class="truncate font-mono">All Security</span>
+                        <svg class="w-4 h-4 text-gray-500 flex-shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                    <div id="security-menu" class="custom-menu absolute z-50 w-full bg-white border border-gray-300 rounded shadow-lg mt-1 hidden flex-col overflow-hidden text-xs">
+                        <div class="p-2 hover:bg-blue-50 cursor-pointer font-semibold border-b text-blue-600 flex items-center gap-2 bg-gray-50" onclick="toggleAllCb('security', 'Security')">
+                            <input type="checkbox" id="chk-all-security" checked class="pointer-events-none w-3.5 h-3.5 text-blue-600 rounded border-gray-300"> <span>All Security</span>
+                        </div>
+                        <div id="security-list" class="overflow-y-auto max-h-48 sim-scroll bg-white"></div>
+                    </div>
                 </div>
                 
-                <!-- Standard Select: Hours Filter -->
-                <div>
+                <!-- Custom Dropdown: Hours Before STD -->
+                <div class="relative w-full custom-dropdown-container">
                     <label class="block text-[0.65rem] font-semibold text-gray-500 uppercase mb-1">Hours Before STD</label>
-                    <select id="hoursFilter" onchange="applyFilters()" class="bg-gray-50 border border-gray-300 text-blue-700 text-xs font-semibold font-mono rounded shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-full p-2 transition-all hover:bg-gray-100 cursor-pointer">
-                        <option value="ALL">All Times</option>
-                        <option value="Negative">Negative</option>
-                        <option value="less than 1 hour">less than 1 hour</option>
-                        <option value="1 hour to 4 hours">1 hour to 4 hours</option>
-                        <option value="more than 4 hours">more than 4 hours</option>
-                    </select>
+                    <div onclick="toggleDropdown('hours-menu')" class="w-full border p-2 rounded text-xs bg-gray-50 cursor-pointer flex justify-between items-center font-semibold text-blue-700 hover:bg-gray-100 shadow-sm transition-all">
+                        <span id="hours-text" class="truncate font-mono">All Times</span>
+                        <svg class="w-4 h-4 text-gray-500 flex-shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                    <div id="hours-menu" class="custom-menu absolute z-50 w-full bg-white border border-gray-300 rounded shadow-lg mt-1 hidden flex-col overflow-hidden text-xs">
+                        <div class="p-2 hover:bg-blue-50 cursor-pointer font-semibold border-b text-blue-600 flex items-center gap-2 bg-gray-50" onclick="toggleAllCb('hours', 'Times')">
+                            <input type="checkbox" id="chk-all-hours" checked class="pointer-events-none w-3.5 h-3.5 text-blue-600 rounded border-gray-300"> <span>All Times</span>
+                        </div>
+                        <div id="hours-list" class="overflow-y-auto max-h-48 sim-scroll bg-white"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -282,6 +299,41 @@
         let isOverlayMode = false;
         let isDataTableVisible = false; // Data table defaults to hidden
 
+        // Handles typing into the Flight search tab
+        function handleFlightSearch(val) {
+            const actionDiv = document.getElementById('flight-search-action');
+            if (val.trim() === '') {
+                actionDiv.classList.add('hidden');
+                actionDiv.innerHTML = '';
+                return;
+            }
+            const keyword = val.toUpperCase();
+            actionDiv.classList.remove('hidden');
+            actionDiv.innerHTML = `<button onclick="selectFlightPrefix('${keyword}')" class="w-full text-left px-2 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold rounded transition-colors text-xs border border-blue-200 shadow-sm">${keyword} only</button>`;
+        }
+
+        // Applies the selected keyword prefix to checkboxes, keeping prior selections
+        function selectFlightPrefix(keyword) {
+            const allCb = document.getElementById('chk-all-flight');
+            const checkboxes = document.querySelectorAll('.flight-cb');
+            
+            // If "All Flights" was previously checked, clear everything first 
+            if (allCb.checked) {
+                allCb.checked = false;
+                checkboxes.forEach(cb => cb.checked = false);
+            }
+            
+            // Add checkboxes that match the new search keyword (accumulates)
+            checkboxes.forEach(cb => {
+                if (cb.value.toUpperCase().startsWith(keyword)) {
+                    cb.checked = true;
+                }
+            });
+            
+            updateDropdownText('flight', 'Flights');
+            applyFilters();
+        }
+
         // Reset All Filters function
         function resetFilters() {
             const startInput = document.getElementById('filter-start-date');
@@ -289,18 +341,21 @@
             if(startInput.min) startInput.value = startInput.min;
             if(endInput.max) endInput.value = endInput.max;
 
-            document.getElementById('chk-all-flight').checked = true;
-            document.querySelectorAll('.flight-cb').forEach(cb => cb.checked = true);
-            updateDropdownText('flight', 'Flights');
+            // Reset all 4 dropdowns dynamically
+            ['flight', 'status', 'security', 'hours'].forEach(key => {
+                let title = key === 'flight' ? 'Flights' : (key === 'status' ? 'Statuses' : (key === 'security' ? 'Security' : 'Times'));
+                document.getElementById(`chk-all-${key}`).checked = true;
+                document.querySelectorAll(`.${key}-cb`).forEach(cb => cb.checked = true);
+                updateDropdownText(key, title);
+            });
 
-            document.getElementById('chk-all-status').checked = true;
-            document.querySelectorAll('.status-cb').forEach(cb => cb.checked = true);
-            updateDropdownText('status', 'Statuses');
-
-            document.getElementById('hbsFilter').value = "ALL";
-            document.getElementById('hoursFilter').value = "ALL";
-            
             document.getElementById('intervalSelect').value = "1h";
+            
+            // Reset Flight Search 
+            if(document.getElementById('flight-search')) {
+                document.getElementById('flight-search').value = '';
+                document.getElementById('flight-search-action').classList.add('hidden');
+            }
 
             applyFilters();
         }
@@ -510,7 +565,7 @@
         }
 
         function populateFilters(data) {
-            const dates = new Set(), flights = new Set(), statuses = new Set(), hbs = new Set();
+            const dates = new Set(), flights = new Set(), statuses = new Set(), hbs = new Set(), hoursCats = new Set();
             data.forEach(row => {
                 let d = parseDateString(row.EVENT);
                 if(d) dates.add(d);
@@ -519,7 +574,9 @@
                 
                 if(row.BAGSTATUS) statuses.add(row.BAGSTATUS);
                 if(row.HBSSTATUS) hbs.add(row.HBSSTATUS);
+                
                 row.HOUR_CATEGORY = getHoursCategory(row['HOURS BEFORE STD']);
+                if (row.HOUR_CATEGORY !== "Unknown") hoursCats.add(row.HOUR_CATEGORY);
             });
 
             // Date Pickers Population using native HTML5 inputs
@@ -537,24 +594,24 @@
                 endInput.value = sortedDates[sortedDates.length - 1];
             }
 
-            // Custom Pickers
+            // Populate ALL Custom Dropdowns
             populateCustomDropdown('flight', flights, 'Flights');
             populateCustomDropdown('status', statuses, 'Statuses');
-
-            // Standard Pickers
-            const hbsSelect = document.getElementById('hbsFilter');
-            hbsSelect.innerHTML = `<option value="ALL">All Security</option>`;
-            [...hbs].sort().forEach(item => { hbsSelect.innerHTML += `<option value="${item}">${item}</option>`; });
+            populateCustomDropdown('security', hbs, 'Security');
+            
+            // Custom sort for Hours to display logically
+            const sortedHours = ["Negative", "less than 1 hour", "1 hour to 4 hours", "more than 4 hours"].filter(h => hoursCats.has(h));
+            populateCustomDropdown('hours', sortedHours, 'Times');
         }
 
         function applyFilters() {
             const startD = document.getElementById('filter-start-date').value;
             const endD = document.getElementById('filter-end-date').value;
+            
             const flightsF = getSelectedCustom('flight');
             const statusesF = getSelectedCustom('status');
-            
-            const hbsF = document.getElementById('hbsFilter').value;
-            const hoursF = document.getElementById('hoursFilter').value;
+            const securityF = getSelectedCustom('security');
+            const hoursF = getSelectedCustom('hours');
 
             const filteredData = globalData.filter(row => {
                 let rowDate = parseDateString(row.EVENT);
@@ -563,11 +620,12 @@
 
                 const validDate = (!startD || rowDate >= startD) && (!endD || rowDate <= endD);
 
+                // Strict AND logic requiring ALL 6 filter criteria to be met
                 return validDate &&
                        (flightsF.includes("ALL") || flightsF.includes(rowFlight)) &&
                        (statusesF.includes("ALL") || statusesF.includes(row.BAGSTATUS)) &&
-                       (hbsF === "ALL" || row.HBSSTATUS === hbsF) &&
-                       (hoursF === "ALL" || row.HOUR_CATEGORY === hoursF);
+                       (securityF.includes("ALL") || securityF.includes(row.HBSSTATUS)) &&
+                       (hoursF.includes("ALL") || hoursF.includes(row.HOUR_CATEGORY));
             });
 
             // Dynamically mount dynamic Title Status injection in Details
