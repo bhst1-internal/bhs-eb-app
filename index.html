@@ -386,7 +386,6 @@
             const list = document.getElementById(`${key}-list`);
             let html = '';
             
-            // If it's the hours array, don't re-sort alphabetically, use the exact provided order
             let sourceArray;
             if (key === 'hours') {
                 sourceArray = dataSet; 
@@ -537,7 +536,6 @@
             return `${str.substring(4,8)}-${str.substring(2,4)}-${str.substring(0,2)}`; 
         }
 
-        // Keep core category mapper intact for timeline separation
         function getHoursCategory(timeStr) {
             if(!timeStr) return "Unknown";
             if(String(timeStr).includes('-')) return "Negative";
@@ -584,7 +582,6 @@
             populateCustomDropdown('status', statuses, 'Statuses');
             populateCustomDropdown('security', hbs, 'Security');
             
-            // Render specific array order including overlapping logic buckets
             const sortedHours = ["< 1 hour", "0 - 2 hours", "2 - 4 hours", "1 - 4 hours", "> 4 hours", "Negative"];
             populateCustomDropdown('hours', sortedHours, 'Times');
         }
@@ -605,7 +602,6 @@
 
                 const validDate = (!startD || rowDate >= startD) && (!endD || rowDate <= endD);
 
-                // Advanced numeric hour parsing specifically for the overlapping filter selections
                 let matchHours = false;
                 if (hoursF.includes("ALL")) {
                     matchHours = true;
@@ -1066,7 +1062,7 @@
                 let ss = str.substring(15, 17);
                 return new Date(`${YYYY}-${MM}-${DD}T${hh}:${mm}:${ss}`).getTime();
             }
-            return 0; // Fallback
+            return 0; 
         }
 
         function updateDetails(data) {
@@ -1078,7 +1074,6 @@
                 if (row.BAGTAGID) validBagIds.add(row.BAGTAGID);
             });
 
-            // Group data by BAGTAGID using GLOBAL DATA to guarantee full chronological tracking paths
             let bagsGroup = {};
             globalData.forEach(row => {
                 if(row.BAGTAGID && validBagIds.has(row.BAGTAGID)) {
@@ -1098,15 +1093,15 @@
                 let records = bagsGroup[bagId];
                 records.sort((a, b) => getEventTimestamp(a.EVENT) - getEventTimestamp(b.EVENT));
 
-                // Find a base record strictly among the records that passed the active filters.
                 let baseIndex = -1;
                 let baseRecord = null;
                 
-                // First attempt: Find a filtered record with complete tracking info (Chute & Flight)
+                // First attempt: Must have STD, a valid location (either CURRNAME or TNO_NAME fallback), and Flight
                 for (let i = 0; i < records.length; i++) {
                     if (data.includes(records[i])) { 
                         let flightKey = Object.keys(records[i]).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
-                        if (records[i].STD && records[i].TDP_IDCURRNAME && flightKey && records[i][flightKey]) {
+                        let hasLocation = records[i].TDP_IDCURRNAME || records[i].TNO_NAME;
+                        if (records[i].STD && hasLocation && flightKey && records[i][flightKey]) {
                             baseIndex = i;
                             baseRecord = records[i];
                             break;
@@ -1114,7 +1109,6 @@
                     }
                 }
 
-                // Second attempt: Fallback to the first filtered record available if none have full tracking info
                 if (baseIndex === -1) {
                     for (let i = 0; i < records.length; i++) {
                         if (data.includes(records[i])) {
@@ -1126,12 +1120,11 @@
                 }
 
                 if (baseIndex !== -1 && baseRecord) {
-                    let assignedChute = baseRecord.TDP_IDCURRNAME || 'UNKNOWN';
+                    let assignedChute = baseRecord.TDP_IDCURRNAME || baseRecord.TNO_NAME || 'UNKNOWN';
                     let cleanAssignedChute = assignedChute.trim().toUpperCase();
                     
                     let displayPath = [];
                     let rawPath = [];
-                    
                     let terminalFound = false;
                     let lastRecordProcessed = baseRecord;
 
@@ -1151,7 +1144,8 @@
                         return `<span class="relative inline-block group cursor-help border-b border-dotted border-gray-500">${name}<span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black text-white text-xs font-normal rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-[100] text-left leading-tight border border-gray-700"><div class="font-bold text-gray-100 mb-1 pb-1 border-b border-gray-700">${title}</div>Time: <span class="font-mono text-gray-300">${e}</span><br/>Hrs to STD: <span class="font-mono text-gray-300">${h}</span></span></span>`;
                     };
 
-                    // Handle edge case dynamically gracefully 
+                    let lastRawName = cleanAssignedChute;
+
                     if (cleanAssignedChute === 'UNKNOWN') {
                         displayPath.push('UNKNOWN');
                         rawPath.push('UNKNOWN');
@@ -1159,90 +1153,56 @@
                     else if (cleanAssignedChute === 'MES EB2') {
                         displayPath.push(renderStaticChute('MES EB2', 'ES30-05'));
                         rawPath.push('MES EB2');
-                        
-                        if (baseIndex + 1 < records.length) {
-                            let nextRecord = records[baseIndex + 1];
-                            let nextChute = nextRecord.TDP_IDCURRNAME;
-                            if (nextChute) {
-                                displayPath.push(renderDynamicChute(nextChute.trim(), nextRecord.EVENT, nextRecord['HOURS BEFORE STD']));
-                                rawPath.push(nextChute.trim());
-                                lastRecordProcessed = nextRecord;
-                                if (isTerminal(nextChute)) terminalFound = true;
-                            }
-                        }
                     } 
                     else if (cleanAssignedChute === 'EBS' || cleanAssignedChute === 'MES EBS') {
                         displayPath.push(renderStaticChute('MES EBS', 'ES26-15'));
                         rawPath.push('MES EBS');
-                        let lastRawName = 'EBS';
-                        for (let j = baseIndex + 1; j < records.length; j++) {
-                            let nextRecord = records[j];
-                            let nextVal = nextRecord.TDP_IDCURRNAME;
-                            if (nextVal) {
-                                let cleanNextVal = nextVal.trim().toUpperCase();
-                                
-                                if (cleanNextVal !== lastRawName && cleanNextVal !== 'EBS' && cleanNextVal !== 'MES EBS') {
-                                    displayPath.push(renderDynamicChute(nextVal.trim(), nextRecord.EVENT, nextRecord['HOURS BEFORE STD']));
-                                    rawPath.push(nextVal.trim());
-                                    lastRecordProcessed = nextRecord;
-                                    lastRawName = cleanNextVal;
-                                    
-                                    if (isTerminal(cleanNextVal)) {
-                                        terminalFound = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
+                        lastRawName = 'EBS';
                     }
                     else if (cleanAssignedChute.startsWith('EB2_ES') || isTerminal(cleanAssignedChute)) {
                         displayPath.push(renderHybridChute('MES EBS', 'ES26-15', baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
-                        displayPath.push(renderDynamicChute(baseRecord.TDP_IDCURRNAME.trim(), baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
-                        
+                        displayPath.push(renderDynamicChute(baseRecord.TDP_IDCURRNAME ? baseRecord.TDP_IDCURRNAME.trim() : assignedChute.trim(), baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
                         rawPath.push('MES EBS');
-                        rawPath.push(baseRecord.TDP_IDCURRNAME.trim());
+                        rawPath.push(baseRecord.TDP_IDCURRNAME ? baseRecord.TDP_IDCURRNAME.trim() : assignedChute.trim());
+                    } 
+                    else {
+                        displayPath.push(renderDynamicChute(assignedChute.trim(), baseRecord.EVENT, baseRecord['HOURS BEFORE STD'])); 
+                        rawPath.push(assignedChute.trim());
+                    }
+
+                    if (isTerminal(lastRawName)) terminalFound = true;
+
+                    // Unified tracking loop for subsequent destinations
+                    for (let j = baseIndex + 1; j < records.length; j++) {
+                        let nextRecord = records[j];
+                        let nextVal = nextRecord.TDP_IDCURRNAME || nextRecord.TNO_NAME;
                         
-                        if (isTerminal(cleanAssignedChute)) terminalFound = true;
-                        let lastRawName = cleanAssignedChute;
-                        
-                        for (let j = baseIndex + 1; j < records.length; j++) {
-                            let nextRecord = records[j];
-                            let nextVal = nextRecord.TDP_IDCURRNAME;
-                            if (nextVal) {
-                                let cleanNextVal = nextVal.trim().toUpperCase();
+                        if (nextVal) {
+                            let cleanNextVal = nextVal.trim().toUpperCase();
+                            
+                            if (cleanNextVal !== lastRawName && cleanNextVal !== 'EBS' && cleanNextVal !== 'MES EBS') {
+                                displayPath.push(renderDynamicChute(nextVal.trim(), nextRecord.EVENT, nextRecord['HOURS BEFORE STD']));
+                                rawPath.push(nextVal.trim());
+                                lastRecordProcessed = nextRecord;
+                                lastRawName = cleanNextVal;
                                 
-                                if (cleanNextVal !== lastRawName) {
-                                    displayPath.push(renderDynamicChute(nextVal.trim(), nextRecord.EVENT, nextRecord['HOURS BEFORE STD']));
-                                    rawPath.push(nextVal.trim());
-                                    lastRecordProcessed = nextRecord;
-                                    lastRawName = cleanNextVal;
-                                    
-                                    if (isTerminal(cleanNextVal)) {
-                                        terminalFound = true;
-                                        break;
-                                    }
+                                if (isTerminal(cleanNextVal)) {
+                                    terminalFound = true;
+                                    break;
                                 }
                             }
                         }
-                    } 
-                    else {
-                        displayPath.push(assignedChute); 
-                        rawPath.push(assignedChute.trim());
-                        if (isTerminal(cleanAssignedChute)) terminalFound = true;
                     }
 
+                    // Look ahead logic: Ensure the absolute final known destination is shown
                     if (!terminalFound) {
-                        if (lastRecordProcessed.TDP_IDFINALNAME) {
-                            let finalName = lastRecordProcessed.TDP_IDFINALNAME.trim();
-                            if (isTerminal(finalName)) {
-                                let currentLastDisplay = "";
-                                if (lastRecordProcessed.TDP_IDCURRNAME) {
-                                    currentLastDisplay = lastRecordProcessed.TDP_IDCURRNAME.trim().toUpperCase();
-                                }
-                                if (finalName.toUpperCase() !== currentLastDisplay) {
-                                    displayPath.push(renderDynamicChute(finalName, lastRecordProcessed.EVENT, lastRecordProcessed['HOURS BEFORE STD']));
-                                    rawPath.push(finalName);
-                                }
+                        let absoluteLastRecord = records[records.length - 1];
+                        let finalName = absoluteLastRecord.TDP_IDFINALNAME || absoluteLastRecord.TDP_IDCURRNAME || absoluteLastRecord.TNO_NAME;
+                        if (finalName) {
+                            finalName = finalName.trim();
+                            if (finalName.toUpperCase() !== lastRawName) {
+                                displayPath.push(renderDynamicChute(finalName, absoluteLastRecord.EVENT, absoluteLastRecord['HOURS BEFORE STD']));
+                                rawPath.push(finalName);
                             }
                         }
                     }
