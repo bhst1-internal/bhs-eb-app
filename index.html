@@ -278,7 +278,6 @@
                 </button>
             </div>
             <div class="overflow-x-auto max-h-[36rem] rounded border border-gray-200 shadow-sm relative sim-scroll">
-                <!-- Keep standard table layout but lock Assigned Chute width -->
                 <table class="w-full text-left border-collapse relative">
                     <thead>
                         <tr>
@@ -545,7 +544,9 @@
             return `${str.substring(4,8)}-${str.substring(2,4)}-${str.substring(0,2)}`; 
         }
 
-        function getHoursCategory(timeStr) {
+        // Logic correctly assigns "nil STD" to bags that have missing STD parameters
+        function getHoursCategory(timeStr, stdStr) {
+            if(!stdStr || String(stdStr).trim() === '' || String(stdStr).trim() === '-') return "nil STD";
             if(!timeStr) return "Unknown";
             if(String(timeStr).includes('-')) return "Negative";
 
@@ -570,7 +571,7 @@
                 if(row.BAGSTATUS) statuses.add(row.BAGSTATUS);
                 if(row.HBSSTATUS) hbs.add(row.HBSSTATUS);
                 
-                row.HOUR_CATEGORY = getHoursCategory(row['HOURS BEFORE STD']);
+                row.HOUR_CATEGORY = getHoursCategory(row['HOURS BEFORE STD'], row.STD);
             });
 
             const sortedDates = [...dates].sort();
@@ -591,7 +592,7 @@
             populateCustomDropdown('status', statuses, 'Statuses');
             populateCustomDropdown('security', hbs, 'Security');
             
-            const sortedHours = ["< 1 hour", "0 - 2 hours", "2 - 4 hours", "1 - 4 hours", "> 4 hours", "Negative"];
+            const sortedHours = ["< 1 hour", "0 - 2 hours", "2 - 4 hours", "1 - 4 hours", "> 4 hours", "Negative", "nil STD"];
             populateCustomDropdown('hours', sortedHours, 'Times');
         }
 
@@ -615,18 +616,22 @@
                 if (hoursF.includes("ALL")) {
                     matchHours = true;
                 } else {
+                    let cat = row.HOUR_CATEGORY;
                     let timeStr = row['HOURS BEFORE STD'];
-                    let isNeg = timeStr && String(timeStr).includes('-');
+                    let isNil = (cat === "nil STD");
+                    let isNeg = (!isNil && timeStr && String(timeStr).includes('-'));
+                    
                     let h = 0;
-                    if (!isNeg && timeStr) {
+                    if (!isNeg && !isNil && timeStr) {
                         let parts = String(timeStr).split(':');
                         if (parts.length >= 2) {
                             h = parseInt(parts[0], 10) + (parseInt(parts[1], 10) / 60);
                         }
                     }
                     
+                    if (isNil && hoursF.includes("nil STD")) matchHours = true;
                     if (isNeg && hoursF.includes("Negative")) matchHours = true;
-                    if (!isNeg) {
+                    if (!isNeg && !isNil) {
                         if (hoursF.includes("< 1 hour") && h >= 0 && h < 1) matchHours = true;
                         if (hoursF.includes("0 - 2 hours") && h >= 0 && h <= 2) matchHours = true;
                         if (hoursF.includes("2 - 4 hours") && h > 2 && h <= 4) matchHours = true;
@@ -916,11 +921,13 @@
                 let dataLess1 = data.filter(d => d.HOUR_CATEGORY === '< 1 hour');
                 let data1to4 = data.filter(d => d.HOUR_CATEGORY === '1 - 4 hours');
                 let dataMore4 = data.filter(d => d.HOUR_CATEGORY === '> 4 hours');
+                let dataNil = data.filter(d => d.HOUR_CATEGORY === 'nil STD');
 
                 if (dataMore4.length > 0) traces.push(generateTrace(dataMore4, baseInterval, '> 4 hours', '#22c55e', 'rgba(34, 197, 94, 0.15)', false)); 
                 if (data1to4.length > 0) traces.push(generateTrace(data1to4, baseInterval, '1 - 4 hours', '#eab308', 'rgba(234, 179, 8, 0.15)', false)); 
                 if (dataLess1.length > 0) traces.push(generateTrace(dataLess1, baseInterval, '< 1 hour', '#f97316', 'rgba(249, 115, 22, 0.15)', false)); 
                 if (dataNegative.length > 0) traces.push(generateTrace(dataNegative, baseInterval, 'Negative', '#ef4444', 'rgba(239, 68, 68, 0.15)', false)); 
+                if (dataNil.length > 0) traces.push(generateTrace(dataNil, baseInterval, 'nil STD', '#9ca3af', 'rgba(156, 163, 175, 0.15)', false)); 
             }
             
             Plotly.newPlot('timelineChart', traces, layout, {responsive: true});
@@ -964,6 +971,10 @@
                     if (level === 1) return 'bg-red-100 text-red-800 font-bold';
                     if (level === 2) return 'bg-red-300 text-red-900 font-bold';
                     if (level === 3) return 'bg-red-600 text-white font-bold';
+                } else if (traceName.includes('nil STD')) {
+                    if (level === 1) return 'bg-gray-100 text-gray-800 font-bold';
+                    if (level === 2) return 'bg-gray-300 text-gray-900 font-bold';
+                    if (level === 3) return 'bg-gray-600 text-white font-bold';
                 }
                 
                 if (level === 1) return 'bg-indigo-100 text-indigo-800 font-bold';
@@ -1105,11 +1116,12 @@
                 let baseIndex = -1;
                 let baseRecord = null;
                 
+                // First attempt strict match
                 for (let i = 0; i < records.length; i++) {
                     if (data.includes(records[i])) { 
                         let flightKey = Object.keys(records[i]).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
                         let hasLocation = records[i].TDP_IDCURRNAME || records[i].TNO_NAME;
-                        if (records[i].STD && hasLocation && flightKey && records[i][flightKey]) {
+                        if (records[i].STD && records[i].STD !== '-' && hasLocation && flightKey && records[i][flightKey]) {
                             baseIndex = i;
                             baseRecord = records[i];
                             break;
@@ -1117,6 +1129,7 @@
                     }
                 }
 
+                // Second attempt fallback
                 if (baseIndex === -1) {
                     for (let i = 0; i < records.length; i++) {
                         if (data.includes(records[i])) {
@@ -1136,20 +1149,21 @@
                     let terminalFound = false;
                     let lastRecordProcessed = baseRecord;
 
+                    // UPDATED Native HTML Tooltips fixing all scroll container clipping problems
                     const renderStaticChute = (name, tooltip) => {
-                        return `<span class="relative inline-block group cursor-help border-b border-dotted border-gray-500">${name}<span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black text-white text-xs font-semibold rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-[100]">${tooltip}</span></span>`;
+                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors" title="${tooltip}">${name}</span>`;
                     };
 
                     const renderDynamicChute = (name, event, hrs) => {
                         let e = event || '-';
                         let h = hrs || '-';
-                        return `<span class="relative inline-block group cursor-help border-b border-dotted border-gray-500">${name}<span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black text-white text-xs font-normal rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-[100] text-left leading-tight border border-gray-700">Time: <span class="font-mono text-gray-300">${e}</span><br/>Hrs to STD: <span class="font-mono text-gray-300">${h}</span></span></span>`;
+                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors" title="Time: ${e}\nHours Before STD: ${h}">${name}</span>`;
                     };
 
                     const renderHybridChute = (name, title, event, hrs) => {
                         let e = event || '-';
                         let h = hrs || '-';
-                        return `<span class="relative inline-block group cursor-help border-b border-dotted border-gray-500">${name}<span class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-black text-white text-xs font-normal rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-[100] text-left leading-tight border border-gray-700"><div class="font-bold text-gray-100 mb-1 pb-1 border-b border-gray-700">${title}</div>Time: <span class="font-mono text-gray-300">${e}</span><br/>Hrs to STD: <span class="font-mono text-gray-300">${h}</span></span></span>`;
+                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors" title="Chute: ${title}\nTime: ${e}\nHours Before STD: ${h}">${name}</span>`;
                     };
 
                     let lastRawName = cleanAssignedChute;
@@ -1252,9 +1266,10 @@
                     hrsClass += " text-yellow-600 font-bold bg-yellow-50";
                 } else if (row.hourCategory === '< 1 hour') {
                     hrsClass += " text-orange-600 font-bold bg-orange-50";
+                } else if (row.hourCategory === 'nil STD') {
+                    hrsClass += " text-gray-500 font-bold bg-gray-50";
                 }
 
-                // Inject the fixed width drag-to-scroll container for Assigned Chute
                 tr.innerHTML = `
                     <td class="${cellClass} font-mono">${row.bagTagId || '-'}</td>
                     <td class="${cellClass} font-mono">${row.event || '-'}</td>
@@ -1274,11 +1289,9 @@
             if (processedBags.length > 500) countText += ` (Filtered down from ${processedBags.length} complete bags)`;
             document.getElementById('detailsCount').innerText = countText;
 
-            // Initialize Drag-to-Scroll capability on newly rendered rows
             enableChuteDragPan();
         }
 
-        // Custom Mouse Drag-to-Pan functionality specifically for Assigned Chute
         function enableChuteDragPan() {
             const sliders = document.querySelectorAll('.chute-scroll-container');
             let isDown = false;
@@ -1307,7 +1320,7 @@
                     if (!isDown) return;
                     e.preventDefault();
                     const x = e.pageX - slider.offsetLeft;
-                    const walk = (x - startX) * 1.5; // Controls scroll speed
+                    const walk = (x - startX) * 1.5; 
                     slider.scrollLeft = scrollLeft - walk;
                 });
             });
