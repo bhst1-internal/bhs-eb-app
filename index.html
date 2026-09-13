@@ -41,7 +41,7 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 font-sans text-gray-800 antialiased">
+<body class="bg-gray-100 font-sans text-gray-800 antialiased relative">
 
     <!-- Loading Popup -->
     <div id="loadingPopup" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-[100] flex items-center justify-center hidden backdrop-blur-sm transition-all duration-300">
@@ -53,6 +53,11 @@
             <p class="text-gray-800 font-bold text-lg">Processing Data...</p>
             <p class="text-gray-500 text-sm">Please wait a moment</p>
         </div>
+    </div>
+
+    <!-- Global Floating Tooltip for Chutes -->
+    <div id="globalTooltip" class="fixed z-[9999] pointer-events-none hidden opacity-0 w-max px-4 py-2.5 bg-gray-800 text-white text-xs rounded-lg shadow-xl border border-gray-700 transition-opacity duration-100">
+        <!-- Content dynamically injected via JS -->
     </div>
 
     <!-- Main Dashboard Container -->
@@ -289,7 +294,7 @@
                             <th class="sticky top-0 z-20 bg-gray-50 text-sm font-bold text-gray-500 uppercase tracking-wider px-6 py-4 border-b border-gray-200 shadow-sm">FLIGHT</th>
                         </tr>
                     </thead>
-                    <tbody id="detailsTableBody" class="bg-white divide-y divide-gray-200">
+                    <tbody id="detailsTableBody" class="bg-white divide-y divide-gray-200 relative">
                         <!-- Populated by JS -->
                     </tbody>
                 </table>
@@ -304,6 +309,65 @@
         let currentDetailsData = []; 
         let isOverlayMode = false;
         let isDataTableVisible = false;
+
+        // Custom Mouse Handlers for the newly detached HTML tooltips
+        document.addEventListener('mouseover', function(e) {
+            if (e.target.classList && e.target.classList.contains('chute-item')) {
+                const tooltip = document.getElementById('globalTooltip');
+                let type = e.target.getAttribute('data-type');
+                let html = '';
+                
+                if (type === 'static') {
+                    let title = e.target.getAttribute('data-title');
+                    html = `<div class="font-bold text-gray-300 uppercase tracking-wide text-left">${title}</div>`;
+                } else if (type === 'dynamic') {
+                    let time = e.target.getAttribute('data-time');
+                    let hrs = e.target.getAttribute('data-hrs');
+                    let color = e.target.getAttribute('data-color');
+                    html = `
+                        <div class="mb-1 text-left"><span class="text-gray-400">Time:</span> <span class="font-bold text-gray-200 ml-1 font-mono">${time}</span></div>
+                        <div class="text-left"><span class="text-gray-400">Hrs to STD:</span> <span class="font-bold ${color} ml-1 font-mono">${hrs}</span></div>
+                    `;
+                } else if (type === 'hybrid') {
+                    let title = e.target.getAttribute('data-title');
+                    let time = e.target.getAttribute('data-time');
+                    let hrs = e.target.getAttribute('data-hrs');
+                    let color = e.target.getAttribute('data-color');
+                    html = `
+                        <div class="font-bold text-gray-300 border-b border-gray-600 pb-1.5 mb-1.5 uppercase tracking-wide text-left">${title}</div>
+                        <div class="mb-1 text-left"><span class="text-gray-400">Time:</span> <span class="font-bold text-gray-200 ml-1 font-mono">${time}</span></div>
+                        <div class="text-left"><span class="text-gray-400">Hrs to STD:</span> <span class="font-bold ${color} ml-1 font-mono">${hrs}</span></div>
+                    `;
+                }
+                
+                tooltip.innerHTML = html;
+                tooltip.classList.remove('hidden');
+                
+                const rect = tooltip.getBoundingClientRect();
+                tooltip.style.left = (e.clientX - rect.width / 2) + 'px';
+                tooltip.style.top = (e.clientY - rect.height - 15) + 'px';
+                
+                setTimeout(() => tooltip.classList.remove('opacity-0'), 10);
+            }
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (e.target.classList && e.target.classList.contains('chute-item')) {
+                const tooltip = document.getElementById('globalTooltip');
+                const rect = tooltip.getBoundingClientRect();
+                tooltip.style.left = (e.clientX - rect.width / 2) + 'px';
+                tooltip.style.top = (e.clientY - rect.height - 15) + 'px';
+            }
+        });
+
+        document.addEventListener('mouseout', function(e) {
+            if (e.target.classList && e.target.classList.contains('chute-item')) {
+                const tooltip = document.getElementById('globalTooltip');
+                tooltip.classList.add('opacity-0');
+                tooltip.classList.add('hidden');
+            }
+        });
+
 
         function handleFlightSearch(val) {
             const actionDiv = document.getElementById('flight-search-action');
@@ -544,7 +608,7 @@
             return `${str.substring(4,8)}-${str.substring(2,4)}-${str.substring(0,2)}`; 
         }
 
-        // Logic correctly assigns "nil STD" to bags that have missing STD parameters
+        // Includes "nil STD" fallback when standard STD is totally absent
         function getHoursCategory(timeStr, stdStr) {
             if(!stdStr || String(stdStr).trim() === '' || String(stdStr).trim() === '-') return "nil STD";
             if(!timeStr) return "Unknown";
@@ -1085,6 +1149,19 @@
             return 0; 
         }
 
+        // Color mapping strictly for individual tooltips depending on event hour step
+        function getTooltipColorClass(hrs) {
+            if(!hrs || hrs === '-' || String(hrs).trim() === '') return 'text-gray-400';
+            if(String(hrs).includes('-')) return 'text-red-400';
+            let parts = String(hrs).split(':');
+            if(parts.length < 2) return 'text-gray-400';
+            let h = parseInt(parts[0], 10) + (parseInt(parts[1], 10) / 60);
+            if(h >= 0 && h < 1) return 'text-orange-400';
+            if(h >= 1 && h <= 4) return 'text-yellow-400';
+            if(h > 4) return 'text-green-400';
+            return 'text-gray-400';
+        }
+
         function updateDetails(data) {
             const tbody = document.getElementById('detailsTableBody');
             tbody.innerHTML = ""; 
@@ -1116,12 +1193,12 @@
                 let baseIndex = -1;
                 let baseRecord = null;
                 
-                // First attempt strict match
+                // First attempt strict match including optional nil STD scenario
                 for (let i = 0; i < records.length; i++) {
                     if (data.includes(records[i])) { 
                         let flightKey = Object.keys(records[i]).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
                         let hasLocation = records[i].TDP_IDCURRNAME || records[i].TNO_NAME;
-                        if (records[i].STD && records[i].STD !== '-' && hasLocation && flightKey && records[i][flightKey]) {
+                        if (hasLocation && flightKey && records[i][flightKey]) {
                             baseIndex = i;
                             baseRecord = records[i];
                             break;
@@ -1149,21 +1226,23 @@
                     let terminalFound = false;
                     let lastRecordProcessed = baseRecord;
 
-                    // UPDATED Native HTML Tooltips fixing all scroll container clipping problems
+                    // Tooltips explicitly generated using dataset properties linking directly to new global floating logic
                     const renderStaticChute = (name, tooltip) => {
-                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors" title="${tooltip}">${name}</span>`;
+                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors chute-item" data-type="static" data-title="${tooltip}">${name}</span>`;
                     };
 
                     const renderDynamicChute = (name, event, hrs) => {
                         let e = event || '-';
                         let h = hrs || '-';
-                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors" title="Time: ${e}\nHours Before STD: ${h}">${name}</span>`;
+                        let color = getTooltipColorClass(h);
+                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors chute-item" data-type="dynamic" data-time="${e}" data-hrs="${h}" data-color="${color}">${name}</span>`;
                     };
 
                     const renderHybridChute = (name, title, event, hrs) => {
                         let e = event || '-';
                         let h = hrs || '-';
-                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors" title="Chute: ${title}\nTime: ${e}\nHours Before STD: ${h}">${name}</span>`;
+                        let color = getTooltipColorClass(h);
+                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors chute-item" data-type="hybrid" data-title="${title}" data-time="${e}" data-hrs="${h}" data-color="${color}">${name}</span>`;
                     };
 
                     let lastRawName = cleanAssignedChute;
@@ -1276,7 +1355,7 @@
                     <td class="${cellClass} font-mono">${row.std || '-'}</td>
                     <td class="${hrsClass}">${row.hrsBefore}</td>
                     <td class="text-sm px-6 py-4 text-gray-700 group-hover/row:text-blue-900 font-sans">
-                        <div class="chute-scroll-container max-w-[250px] md:max-w-[300px] xl:max-w-[400px] overflow-x-auto whitespace-nowrap sim-scroll pb-2 cursor-grab flex items-center no-select" title="Click and drag to pan horizontal paths">
+                        <div class="chute-scroll-container max-w-[250px] md:max-w-[300px] xl:max-w-[400px] overflow-x-auto whitespace-nowrap sim-scroll pb-2 cursor-grab flex items-center no-select">
                             ${row.chuteDisplay}
                         </div>
                     </td>
