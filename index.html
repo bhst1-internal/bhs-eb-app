@@ -312,13 +312,14 @@
     </div>
 
     <script>
+        // globalData strictly holds EXACTLY ONE fully-resolved base record per BAGTAGID
         let globalData = [];
         let currentDetailsData = []; 
         let isOverlayMode = false;
         let isDataTableVisible = false;
         let detailsDisplayLimit = 500;
 
-        // Custom HTML Tooltips
+        // Custom HTML Tooltips fixing all scroll container clipping problems
         document.addEventListener('mouseover', function(e) {
             if (e.target.classList && e.target.classList.contains('chute-item')) {
                 const tooltip = document.getElementById('globalTooltip');
@@ -671,18 +672,75 @@
             return "Unknown";
         }
 
-        function populateFilters(data) {
+        function getEventTimestamp(eventStr) {
+            if(!eventStr) return 0;
+            let str = String(eventStr).trim();
+            if(str.length >= 17) {
+                let DD = str.substring(0, 2);
+                let MM = str.substring(2, 4);
+                let YYYY = str.substring(4, 8);
+                let hh = str.substring(9, 11);
+                let mm = str.substring(12, 14);
+                let ss = str.substring(15, 17);
+                return new Date(`${YYYY}-${MM}-${DD}T${hh}:${mm}:${ss}`).getTime();
+            }
+            return 0; 
+        }
+
+        // ==========================================
+        // DATA PROCESSING REFACTOR: Only exactly 1 Base Record per Bag
+        // ==========================================
+        function processRawDataIntoGlobal(rawData) {
+            let validData = rawData.filter(row => row.BAGTAGID && /\d/.test(String(row.BAGTAGID)));
+            let bagsGroup = {};
+            
+            validData.forEach(row => {
+                if(!bagsGroup[row.BAGTAGID]) bagsGroup[row.BAGTAGID] = [];
+                bagsGroup[row.BAGTAGID].push(row);
+            });
+
+            let newGlobalData = [];
+            for (let bagId in bagsGroup) {
+                let records = bagsGroup[bagId];
+                // Sort chronologically
+                records.sort((a, b) => getEventTimestamp(a.EVENT) - getEventTimestamp(b.EVENT));
+
+                // The absolute first event dictates the true identity and time of the bag entering the system
+                let baseRecord = records[0];
+                
+                // Resolve flight from subsequent records if missing on the first one
+                let flightKey = Object.keys(baseRecord).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
+                let flight = baseRecord[flightKey];
+                if (!flight) {
+                    for(let i=1; i<records.length; i++) {
+                        let nextFlightKey = Object.keys(records[i]).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
+                        if (records[i][nextFlightKey]) {
+                            flight = records[i][nextFlightKey];
+                            break;
+                        }
+                    }
+                }
+                
+                baseRecord._resolvedFlight = flight || '-';
+                baseRecord._history = records;
+                baseRecord.HOUR_CATEGORY = getHoursCategory(baseRecord['HOURS BEFORE STD'], baseRecord.STD);
+
+                newGlobalData.push(baseRecord);
+            }
+            
+            return newGlobalData;
+        }
+
+        function populateFilters(baseRecords) {
             const dates = new Set(), flights = new Set(), statuses = new Set(), bagtagids = new Set();
-            data.forEach(row => {
-                let d = parseDateString(row.EVENT);
+            
+            baseRecords.forEach(baseRow => {
+                let d = parseDateString(baseRow.EVENT);
                 if(d) dates.add(d);
-                const flightKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
-                if (flightKey && row[flightKey]) flights.add(row[flightKey]);
                 
-                if(row.BAGSTATUS) statuses.add(row.BAGSTATUS);
-                if(row.BAGTAGID) bagtagids.add(String(row.BAGTAGID));
-                
-                row.HOUR_CATEGORY = getHoursCategory(row['HOURS BEFORE STD'], row.STD);
+                if (baseRow._resolvedFlight && baseRow._resolvedFlight !== '-') flights.add(baseRow._resolvedFlight);
+                if(baseRow.BAGSTATUS) statuses.add(baseRow.BAGSTATUS);
+                if(baseRow.BAGTAGID) bagtagids.add(String(baseRow.BAGTAGID));
             });
 
             const sortedDates = [...dates].sort();
@@ -716,11 +774,11 @@
             const bagtagidF = getSelectedCustom('bagtagid');
             const hoursF = getSelectedCustom('hours');
 
-            const rawFilteredData = globalData.filter(row => {
-                let rowDate = parseDateString(row.EVENT);
-                const flightKey = Object.keys(row).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
-                const rowFlight = flightKey ? row[flightKey] : null;
-                const rowBagTagId = String(row.BAGTAGID);
+            // globalData represents EXACTLY 1 row per bag now.
+            const filteredData = globalData.filter(baseRow => {
+                let rowDate = parseDateString(baseRow.EVENT);
+                const rowFlight = baseRow._resolvedFlight;
+                const rowBagTagId = String(baseRow.BAGTAGID);
 
                 const validDate = (!startD || rowDate >= startD) && (!endD || rowDate <= endD);
 
@@ -728,8 +786,8 @@
                 if (hoursF.includes("ALL")) {
                     matchHours = true;
                 } else {
-                    let cat = row.HOUR_CATEGORY;
-                    let timeStr = row['HOURS BEFORE STD'];
+                    let cat = baseRow.HOUR_CATEGORY;
+                    let timeStr = baseRow['HOURS BEFORE STD'];
                     let isNil = (cat === "nil STD");
                     let isNeg = (!isNil && timeStr && String(timeStr).includes('-'));
                     
@@ -754,66 +812,18 @@
 
                 return validDate &&
                        (flightsF.includes("ALL") || flightsF.includes(rowFlight)) &&
-                       (statusesF.includes("ALL") || statusesF.includes(row.BAGSTATUS)) &&
+                       (statusesF.includes("ALL") || statusesF.includes(baseRow.BAGSTATUS)) &&
                        (bagtagidF.includes("ALL") || bagtagidF.includes(rowBagTagId)) &&
                        matchHours;
             });
 
-            let validBagIds = new Set();
-            rawFilteredData.forEach(row => {
-                if (row.BAGTAGID) validBagIds.add(row.BAGTAGID);
-            });
-
-            let bagsGroup = {};
-            globalData.forEach(row => {
-                if(row.BAGTAGID && validBagIds.has(row.BAGTAGID)) {
-                    if(!bagsGroup[row.BAGTAGID]) bagsGroup[row.BAGTAGID] = [];
-                    bagsGroup[row.BAGTAGID].push(row);
-                }
-            });
-
-            let exactUniqueData = [];
-
-            for (let bagId in bagsGroup) {
-                let records = bagsGroup[bagId];
-                records.sort((a, b) => getEventTimestamp(a.EVENT) - getEventTimestamp(b.EVENT));
-
-                let baseIndex = -1;
-                let baseRecord = null;
-                
-                for (let i = 0; i < records.length; i++) {
-                    if (rawFilteredData.includes(records[i])) { 
-                        let flightKey = Object.keys(records[i]).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
-                        let hasLocation = records[i].TDP_IDCURRNAME || records[i].TNO_NAME;
-                        if (hasLocation && flightKey && records[i][flightKey]) {
-                            baseIndex = i;
-                            baseRecord = records[i];
-                            break;
-                        }
-                    }
-                }
-
-                if (baseIndex === -1) {
-                    for (let i = 0; i < records.length; i++) {
-                        if (rawFilteredData.includes(records[i])) {
-                            baseIndex = i;
-                            baseRecord = records[i];
-                            break;
-                        }
-                    }
-                }
-
-                if (baseRecord) {
-                    exactUniqueData.push(baseRecord);
-                }
-            }
-
             let statusText = document.getElementById('status-text').innerText;
             document.getElementById('detailsHeaderTitle').innerHTML = `EB DETAILS: <span class="text-blue-600">${statusText.toUpperCase()}</span>`;
 
-            updateKPIs(exactUniqueData);
-            updateTimeline(exactUniqueData);
-            updateDetails(exactUniqueData);
+            // Since filteredData is precisely 1 unique event per bag, they all receive identical datasets to match perfectly.
+            updateKPIs(filteredData);
+            updateTimeline(filteredData);
+            updateDetails(filteredData);
         }
 
         function getBucketCounts(data, intervalType, normalizeDate = false) {
@@ -868,7 +878,7 @@
                 return (isNegative ? '-' : '') + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
             }
 
-            const uniqueBags = new Set(data.map(d => d.BAGTAGID)).size;
+            const uniqueBags = data.length; // Already uniquely filtered
             const flightsSet = new Set();
             const flightDestinations = {};
             
@@ -877,10 +887,9 @@
             let maxBag = '-', minBag = '-';
 
             data.forEach(d => {
-                const fKey = Object.keys(d).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
-                const flight = fKey ? d[fKey] : null;
+                const flight = d._resolvedFlight;
                 
-                if (flight) {
+                if (flight && flight !== '-') {
                     flightsSet.add(flight);
                     let curr = (d.TDP_IDCURRNAME || '').trim().toUpperCase();
                     let fin = (d.TDP_IDFINALNAME || '').trim().toUpperCase();
@@ -1233,21 +1242,6 @@
             enableDragPan();
         }
 
-        function getEventTimestamp(eventStr) {
-            if(!eventStr) return 0;
-            let str = String(eventStr).trim();
-            if(str.length >= 17) {
-                let DD = str.substring(0, 2);
-                let MM = str.substring(2, 4);
-                let YYYY = str.substring(4, 8);
-                let hh = str.substring(9, 11);
-                let mm = str.substring(12, 14);
-                let ss = str.substring(15, 17);
-                return new Date(`${YYYY}-${MM}-${DD}T${hh}:${mm}:${ss}`).getTime();
-            }
-            return 0; 
-        }
-
         function getTooltipColorClass(hrs) {
             if(!hrs || hrs === '-' || String(hrs).trim() === '') return 'text-gray-400';
             if(String(hrs).includes('-')) return 'text-red-400';
@@ -1260,166 +1254,124 @@
             return 'text-gray-400';
         }
 
-        function updateDetails(data) {
+        function updateDetails(baseRecords) {
             detailsDisplayLimit = 500; 
-            let validBagIds = new Set();
-            data.forEach(row => {
-                if (row.BAGTAGID) validBagIds.add(row.BAGTAGID);
-            });
-
-            let bagsGroup = {};
-            globalData.forEach(row => {
-                if(row.BAGTAGID && validBagIds.has(row.BAGTAGID)) {
-                    if(!bagsGroup[row.BAGTAGID]) bagsGroup[row.BAGTAGID] = [];
-                    bagsGroup[row.BAGTAGID].push(row);
-                }
-            });
-
             let processedBags = [];
+            
             const isTerminal = (val) => {
                 if(!val) return false;
                 let v = val.trim().toUpperCase();
                 return v.startsWith('MA') || v.startsWith('MB') || v.startsWith('MC');
             };
 
-            for (let bagId in bagsGroup) {
-                let records = bagsGroup[bagId];
-                records.sort((a, b) => getEventTimestamp(a.EVENT) - getEventTimestamp(b.EVENT));
-
-                let baseIndex = -1;
-                let baseRecord = null;
+            // Loop strictly through the single base records that passed the global filter
+            baseRecords.forEach(baseRecord => {
+                let records = baseRecord._history; // Fetch the entire chronological history associated with this bag
                 
-                for (let i = 0; i < records.length; i++) {
-                    if (data.includes(records[i])) { 
-                        let flightKey = Object.keys(records[i]).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
-                        let hasLocation = records[i].TDP_IDCURRNAME || records[i].TNO_NAME;
-                        if (hasLocation && flightKey && records[i][flightKey]) {
-                            baseIndex = i;
-                            baseRecord = records[i];
-                            break;
-                        }
-                    }
+                let assignedChute = baseRecord.TDP_IDCURRNAME || baseRecord.TNO_NAME || 'UNKNOWN';
+                let cleanAssignedChute = assignedChute.trim().toUpperCase();
+                
+                let displayPath = [];
+                let rawPath = [];
+                let terminalFound = false;
+                
+                const renderStaticChute = (name, tooltip) => {
+                    return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors chute-item" data-type="static" data-title="${tooltip}">${name}</span>`;
+                };
+
+                const renderDynamicChute = (name, event, hrs) => {
+                    let e = event || '-';
+                    let h = hrs || '-';
+                    let color = getTooltipColorClass(h);
+                    return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors chute-item" data-type="dynamic" data-time="${e}" data-hrs="${h}" data-color="${color}">${name}</span>`;
+                };
+
+                const renderHybridChute = (name, title, event, hrs) => {
+                    let e = event || '-';
+                    let h = hrs || '-';
+                    let color = getTooltipColorClass(h);
+                    return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors chute-item" data-type="hybrid" data-title="${title}" data-time="${e}" data-hrs="${h}" data-color="${color}">${name}</span>`;
+                };
+
+                let lastRawName = cleanAssignedChute;
+
+                // Step 1: Render the true first entry node
+                if (cleanAssignedChute === 'UNKNOWN') {
+                    displayPath.push('UNKNOWN');
+                    rawPath.push('UNKNOWN');
+                }
+                else if (cleanAssignedChute === 'MES EB2') {
+                    displayPath.push(renderStaticChute('MES EB2', 'ES30-05'));
+                    rawPath.push('MES EB2');
+                } 
+                else if (cleanAssignedChute === 'EBS' || cleanAssignedChute === 'MES EBS') {
+                    displayPath.push(renderStaticChute('MES EBS', 'ES26-15'));
+                    rawPath.push('MES EBS');
+                    lastRawName = 'EBS';
+                }
+                else if (cleanAssignedChute.startsWith('EB2_ES') || isTerminal(cleanAssignedChute)) {
+                    displayPath.push(renderHybridChute('MES EBS', 'ES26-15', baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
+                    displayPath.push(renderDynamicChute(baseRecord.TDP_IDCURRNAME ? baseRecord.TDP_IDCURRNAME.trim() : assignedChute.trim(), baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
+                    rawPath.push('MES EBS');
+                    rawPath.push(baseRecord.TDP_IDCURRNAME ? baseRecord.TDP_IDCURRNAME.trim() : assignedChute.trim());
+                } 
+                else {
+                    displayPath.push(renderDynamicChute(assignedChute.trim(), baseRecord.EVENT, baseRecord['HOURS BEFORE STD'])); 
+                    rawPath.push(assignedChute.trim());
                 }
 
-                if (baseIndex === -1) {
-                    for (let i = 0; i < records.length; i++) {
-                        if (data.includes(records[i])) {
-                            baseIndex = i;
-                            baseRecord = records[i];
-                            break;
-                        }
-                    }
-                }
+                if (isTerminal(lastRawName)) terminalFound = true;
 
-                if (baseIndex !== -1 && baseRecord) {
-                    let assignedChute = baseRecord.TDP_IDCURRNAME || baseRecord.TNO_NAME || 'UNKNOWN';
-                    let cleanAssignedChute = assignedChute.trim().toUpperCase();
+                // Step 2: Traverse the remaining historical records for this specific bag purely for the journey map
+                for (let j = 1; j < records.length; j++) {
+                    let nextRecord = records[j];
+                    let nextVal = nextRecord.TDP_IDCURRNAME || nextRecord.TNO_NAME;
                     
-                    let displayPath = [];
-                    let rawPath = [];
-                    let terminalFound = false;
-                    let lastRecordProcessed = baseRecord;
-
-                    const renderStaticChute = (name, tooltip) => {
-                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors chute-item" data-type="static" data-title="${tooltip}">${name}</span>`;
-                    };
-
-                    const renderDynamicChute = (name, event, hrs) => {
-                        let e = event || '-';
-                        let h = hrs || '-';
-                        let color = getTooltipColorClass(h);
-                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors chute-item" data-type="dynamic" data-time="${e}" data-hrs="${h}" data-color="${color}">${name}</span>`;
-                    };
-
-                    const renderHybridChute = (name, title, event, hrs) => {
-                        let e = event || '-';
-                        let h = hrs || '-';
-                        let color = getTooltipColorClass(h);
-                        return `<span class="cursor-help border-b border-dotted border-blue-500 hover:text-blue-700 transition-colors chute-item" data-type="hybrid" data-title="${title}" data-time="${e}" data-hrs="${h}" data-color="${color}">${name}</span>`;
-                    };
-
-                    let lastRawName = cleanAssignedChute;
-
-                    if (cleanAssignedChute === 'UNKNOWN') {
-                        displayPath.push('UNKNOWN');
-                        rawPath.push('UNKNOWN');
-                    }
-                    else if (cleanAssignedChute === 'MES EB2') {
-                        displayPath.push(renderStaticChute('MES EB2', 'ES30-05'));
-                        rawPath.push('MES EB2');
-                    } 
-                    else if (cleanAssignedChute === 'EBS' || cleanAssignedChute === 'MES EBS') {
-                        displayPath.push(renderStaticChute('MES EBS', 'ES26-15'));
-                        rawPath.push('MES EBS');
-                        lastRawName = 'EBS';
-                    }
-                    else if (cleanAssignedChute.startsWith('EB2_ES') || isTerminal(cleanAssignedChute)) {
-                        displayPath.push(renderHybridChute('MES EBS', 'ES26-15', baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
-                        displayPath.push(renderDynamicChute(baseRecord.TDP_IDCURRNAME ? baseRecord.TDP_IDCURRNAME.trim() : assignedChute.trim(), baseRecord.EVENT, baseRecord['HOURS BEFORE STD']));
-                        rawPath.push('MES EBS');
-                        rawPath.push(baseRecord.TDP_IDCURRNAME ? baseRecord.TDP_IDCURRNAME.trim() : assignedChute.trim());
-                    } 
-                    else {
-                        displayPath.push(renderDynamicChute(assignedChute.trim(), baseRecord.EVENT, baseRecord['HOURS BEFORE STD'])); 
-                        rawPath.push(assignedChute.trim());
-                    }
-
-                    if (isTerminal(lastRawName)) terminalFound = true;
-
-                    for (let j = baseIndex + 1; j < records.length; j++) {
-                        let nextRecord = records[j];
-                        let nextVal = nextRecord.TDP_IDCURRNAME || nextRecord.TNO_NAME;
+                    if (nextVal) {
+                        let cleanNextVal = nextVal.trim().toUpperCase();
                         
-                        if (nextVal) {
-                            let cleanNextVal = nextVal.trim().toUpperCase();
+                        if (cleanNextVal !== lastRawName && cleanNextVal !== 'EBS' && cleanNextVal !== 'MES EBS') {
+                            displayPath.push(renderDynamicChute(nextVal.trim(), nextRecord.EVENT, nextRecord['HOURS BEFORE STD']));
+                            rawPath.push(nextVal.trim());
+                            lastRawName = cleanNextVal;
                             
-                            if (cleanNextVal !== lastRawName && cleanNextVal !== 'EBS' && cleanNextVal !== 'MES EBS') {
-                                displayPath.push(renderDynamicChute(nextVal.trim(), nextRecord.EVENT, nextRecord['HOURS BEFORE STD']));
-                                rawPath.push(nextVal.trim());
-                                lastRecordProcessed = nextRecord;
-                                lastRawName = cleanNextVal;
-                                
-                                if (isTerminal(cleanNextVal)) {
-                                    terminalFound = true;
-                                    break;
-                                }
+                            if (isTerminal(cleanNextVal)) {
+                                terminalFound = true;
+                                break; // Stop charting if it reached terminal
                             }
                         }
                     }
-
-                    if (!terminalFound) {
-                        let absoluteLastRecord = records[records.length - 1];
-                        let finalName = absoluteLastRecord.TDP_IDFINALNAME || absoluteLastRecord.TDP_IDCURRNAME || absoluteLastRecord.TNO_NAME;
-                        if (finalName) {
-                            finalName = finalName.trim();
-                            if (finalName.toUpperCase() !== lastRawName) {
-                                displayPath.push(renderDynamicChute(finalName, absoluteLastRecord.EVENT, absoluteLastRecord['HOURS BEFORE STD']));
-                                rawPath.push(finalName);
-                            }
-                        }
-                    }
-
-                    let finalChuteDisplay = displayPath.join(' <span class="text-gray-400 font-bold mx-1">&rarr;</span> ');
-                    let finalRawChute = rawPath.join(' -> ');
-
-                    let flightKey = Object.keys(baseRecord).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
-                    
-                    processedBags.push({
-                        bagTagId: baseRecord.BAGTAGID,
-                        event: baseRecord.EVENT,
-                        std: baseRecord.STD || '-',
-                        hrsBefore: baseRecord['HOURS BEFORE STD'] || '-',
-                        hourCategory: baseRecord.HOUR_CATEGORY,
-                        chuteDisplay: finalChuteDisplay, 
-                        rawChute: finalRawChute,
-                        flight: flightKey && baseRecord[flightKey] ? baseRecord[flightKey] : '-'
-                    });
                 }
-            }
 
-            processedBags.sort((a, b) => getEventTimestamp(a.event) - getEventTimestamp(b.event));
+                // Step 3: Absolute final fallback if natural terminal state wasn't hit
+                if (!terminalFound) {
+                    let absoluteLastRecord = records[records.length - 1];
+                    let finalName = absoluteLastRecord.TDP_IDFINALNAME || absoluteLastRecord.TDP_IDCURRNAME || absoluteLastRecord.TNO_NAME;
+                    if (finalName) {
+                        finalName = finalName.trim();
+                        if (finalName.toUpperCase() !== lastRawName) {
+                            displayPath.push(renderDynamicChute(finalName, absoluteLastRecord.EVENT, absoluteLastRecord['HOURS BEFORE STD']));
+                            rawPath.push(finalName);
+                        }
+                    }
+                }
+
+                let finalChuteDisplay = displayPath.join(' <span class="text-gray-400 font-bold mx-1">&rarr;</span> ');
+                let finalRawChute = rawPath.join(' -> ');
+
+                processedBags.push({
+                    bagTagId: baseRecord.BAGTAGID,
+                    event: baseRecord.EVENT,
+                    std: baseRecord.STD || '-',
+                    hrsBefore: baseRecord['HOURS BEFORE STD'] || '-',
+                    hourCategory: baseRecord.HOUR_CATEGORY,
+                    chuteDisplay: finalChuteDisplay, 
+                    rawChute: finalRawChute,
+                    flight: baseRecord._resolvedFlight
+                });
+            });
+
             currentDetailsData = processedBags;
-            
             renderDetailsTable();
         }
 
@@ -1536,7 +1488,9 @@
                     const sheet = workbook.Sheets[sheetName];
                     
                     let rawData = XLSX.utils.sheet_to_json(sheet);
-                    globalData = rawData.filter(row => row.BAGTAGID && /\d/.test(String(row.BAGTAGID)));
+                    
+                    // Centralized processing into unique bag objects upon load
+                    globalData = processRawDataIntoGlobal(rawData);
                     
                     populateFilters(globalData);
                     applyFilters();
@@ -1546,6 +1500,35 @@
                     console.log("Auto-load skipped or failed. Awaiting manual upload.", err);
                     document.getElementById('loadingPopup').classList.add('hidden');
                 });
+        });
+
+        // Ensure manual upload goes through the same central processing
+        document.getElementById('fileUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            document.getElementById('loadingPopup').classList.remove('hidden');
+
+            setTimeout(() => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    let sheetName = workbook.SheetNames.includes('20260828_BagTracking') ? '20260828_BagTracking' : workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[sheetName];
+                    
+                    let rawData = XLSX.utils.sheet_to_json(sheet);
+                    
+                    // Centralized processing into unique bag objects upon load
+                    globalData = processRawDataIntoGlobal(rawData);
+                    
+                    populateFilters(globalData);
+                    applyFilters();
+
+                    document.getElementById('loadingPopup').classList.add('hidden');
+                };
+                reader.readAsArrayBuffer(file);
+            }, 100);
         });
 
         if ('serviceWorker' in navigator) {
