@@ -28,9 +28,17 @@
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         
-        /* Utility to simulate scrollbars for custom dropdowns */
-        .sim-scroll::-webkit-scrollbar { width: 5px; }
+        /* Utility to simulate scrollbars for custom dropdowns & table inner cells */
+        .sim-scroll::-webkit-scrollbar { height: 6px; width: 5px; }
+        .sim-scroll::-webkit-scrollbar-track { background: transparent; }
         .sim-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .sim-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Hide text selection while dragging */
+        .no-select {
+            user-select: none;
+            -webkit-user-select: none;
+        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans text-gray-800 antialiased">
@@ -270,6 +278,7 @@
                 </button>
             </div>
             <div class="overflow-x-auto max-h-[36rem] rounded border border-gray-200 shadow-sm relative sim-scroll">
+                <!-- Keep standard table layout but lock Assigned Chute width -->
                 <table class="w-full text-left border-collapse relative">
                     <thead>
                         <tr>
@@ -1096,7 +1105,6 @@
                 let baseIndex = -1;
                 let baseRecord = null;
                 
-                // First attempt: Must have STD, a valid location (either CURRNAME or TNO_NAME fallback), and Flight
                 for (let i = 0; i < records.length; i++) {
                     if (data.includes(records[i])) { 
                         let flightKey = Object.keys(records[i]).find(k => k.trim().toUpperCase() === 'DESIGNATOR' || k.trim().toUpperCase() === 'FLIGHT');
@@ -1172,7 +1180,6 @@
 
                     if (isTerminal(lastRawName)) terminalFound = true;
 
-                    // Unified tracking loop for subsequent destinations
                     for (let j = baseIndex + 1; j < records.length; j++) {
                         let nextRecord = records[j];
                         let nextVal = nextRecord.TDP_IDCURRNAME || nextRecord.TNO_NAME;
@@ -1194,7 +1201,6 @@
                         }
                     }
 
-                    // Look ahead logic: Ensure the absolute final known destination is shown
                     if (!terminalFound) {
                         let absoluteLastRecord = records[records.length - 1];
                         let finalName = absoluteLastRecord.TDP_IDFINALNAME || absoluteLastRecord.TDP_IDCURRNAME || absoluteLastRecord.TNO_NAME;
@@ -1248,12 +1254,17 @@
                     hrsClass += " text-orange-600 font-bold bg-orange-50";
                 }
 
+                // Inject the fixed width drag-to-scroll container for Assigned Chute
                 tr.innerHTML = `
                     <td class="${cellClass} font-mono">${row.bagTagId || '-'}</td>
                     <td class="${cellClass} font-mono">${row.event || '-'}</td>
                     <td class="${cellClass} font-mono">${row.std || '-'}</td>
                     <td class="${hrsClass}">${row.hrsBefore}</td>
-                    <td class="${cellClass} font-sans">${row.chuteDisplay}</td>
+                    <td class="text-sm px-6 py-4 text-gray-700 group-hover/row:text-blue-900 font-sans">
+                        <div class="chute-scroll-container max-w-[250px] md:max-w-[300px] xl:max-w-[400px] overflow-x-auto whitespace-nowrap sim-scroll pb-2 cursor-grab flex items-center no-select" title="Click and drag to pan horizontal paths">
+                            ${row.chuteDisplay}
+                        </div>
+                    </td>
                     <td class="${cellClass} font-bold text-gray-800 group-hover/row:text-blue-900">${row.flight}</td>
                 `;
                 tbody.appendChild(tr);
@@ -1262,6 +1273,44 @@
             let countText = `Showing ${displayData.length} unique bags`;
             if (processedBags.length > 500) countText += ` (Filtered down from ${processedBags.length} complete bags)`;
             document.getElementById('detailsCount').innerText = countText;
+
+            // Initialize Drag-to-Scroll capability on newly rendered rows
+            enableChuteDragPan();
+        }
+
+        // Custom Mouse Drag-to-Pan functionality specifically for Assigned Chute
+        function enableChuteDragPan() {
+            const sliders = document.querySelectorAll('.chute-scroll-container');
+            let isDown = false;
+            let startX;
+            let scrollLeft;
+
+            sliders.forEach(slider => {
+                slider.addEventListener('mousedown', (e) => {
+                    isDown = true;
+                    slider.classList.remove('cursor-grab');
+                    slider.classList.add('cursor-grabbing');
+                    startX = e.pageX - slider.offsetLeft;
+                    scrollLeft = slider.scrollLeft;
+                });
+                slider.addEventListener('mouseleave', () => {
+                    isDown = false;
+                    slider.classList.remove('cursor-grabbing');
+                    slider.classList.add('cursor-grab');
+                });
+                slider.addEventListener('mouseup', () => {
+                    isDown = false;
+                    slider.classList.remove('cursor-grabbing');
+                    slider.classList.add('cursor-grab');
+                });
+                slider.addEventListener('mousemove', (e) => {
+                    if (!isDown) return;
+                    e.preventDefault();
+                    const x = e.pageX - slider.offsetLeft;
+                    const walk = (x - startX) * 1.5; // Controls scroll speed
+                    slider.scrollLeft = scrollLeft - walk;
+                });
+            });
         }
 
         window.addEventListener('DOMContentLoaded', () => {
