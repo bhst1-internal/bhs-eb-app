@@ -474,7 +474,7 @@
         function resetFilters() {
             const startInput = document.getElementById('filter-start-date');
             const endInput = document.getElementById('filter-end-date');
-            if(startInput.min) startInput.value = startInput.min;
+            if(startInput.max) startInput.value = startInput.max;
             if(endInput.max) endInput.value = endInput.max;
 
             ['flight', 'status', 'bagtagid', 'hours'].forEach(key => {
@@ -748,13 +748,15 @@
             const endInput = document.getElementById('filter-end-date');
             
             if (sortedDates.length > 0) {
+                const latestDate = sortedDates[sortedDates.length - 1];
+                
                 startInput.min = sortedDates[0];
-                startInput.max = sortedDates[sortedDates.length - 1];
-                startInput.value = sortedDates[0];
+                startInput.max = latestDate;
+                startInput.value = latestDate;
 
                 endInput.min = sortedDates[0];
-                endInput.max = sortedDates[sortedDates.length - 1];
-                endInput.value = sortedDates[sortedDates.length - 1];
+                endInput.max = latestDate;
+                endInput.value = latestDate;
             }
 
             populateCustomDropdown('flight', flights, 'Flights');
