@@ -226,7 +226,7 @@
         <!-- EB TIMELINE (AREA CHART & DATA TABLE) -->
         <div id="timelineSection" class="bg-white rounded-lg shadow p-6 border-t-4 border-indigo-500 transition-all relative">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wide">1. EB Timeline</h2>
+                <h2 class="text-sm font-bold text-gray-700 tracking-wide">1. EB Timeline</h2>
                 
                 <div class="flex items-center space-x-3">
                     <button id="saveJpegBtn" onclick="saveTimelineAsJPEG()" class="export-chart-btn flex items-center gap-1 text-[0.65rem] font-bold text-gray-500 hover:text-blue-600 transition bg-gray-100 px-2 py-1 rounded border border-gray-200" title="Save Chart as JPEG">
@@ -258,7 +258,7 @@
             
             <!-- Synchronized Data Matrix Table with drag-to-pan enabled container -->
             <div id="timelineTableContainer" class="mt-6 border-t border-gray-100 pt-6 transition-all duration-300 hidden">
-                <h3 class="text-[0.65rem] font-bold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <h3 class="text-[0.65rem] font-bold text-gray-500 tracking-wide mb-3 flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                     Timeline Data Breakdown
                 </h3>
@@ -278,7 +278,7 @@
         <!-- DETAILS TABLE -->
         <div class="bg-white rounded-lg shadow p-6 border-t-4 border-yellow-500 transition-all">
             <div class="flex justify-between items-center mb-4">
-                <h2 id="detailsHeaderTitle" class="text-sm font-bold text-gray-700 uppercase tracking-wide">EB DETAILS: <span class="text-blue-600">ALL STATUSES</span></h2>
+                <h2 id="detailsHeaderTitle" class="text-sm font-bold text-gray-700 tracking-wide">EB Details: <span class="text-blue-600">All Statuses</span></h2>
                 <button id="btn-export-excel" onclick="exportDetailsToExcel()" class="flex px-4 py-2 bg-green-600 text-white text-sm font-bold rounded hover:bg-green-700 transition shadow-sm flex-shrink-0 items-center gap-1.5 cursor-pointer" title="Export this table to Excel">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                     Export
@@ -474,7 +474,7 @@
         function resetFilters() {
             const startInput = document.getElementById('filter-start-date');
             const endInput = document.getElementById('filter-end-date');
-            if(startInput.min) startInput.value = startInput.min;
+            if(startInput.max) startInput.value = startInput.max;
             if(endInput.max) endInput.value = endInput.max;
 
             ['flight', 'status', 'bagtagid', 'hours'].forEach(key => {
@@ -748,13 +748,15 @@
             const endInput = document.getElementById('filter-end-date');
             
             if (sortedDates.length > 0) {
+                const latestDate = sortedDates[sortedDates.length - 1];
+                
                 startInput.min = sortedDates[0];
-                startInput.max = sortedDates[sortedDates.length - 1];
-                startInput.value = sortedDates[0];
+                startInput.max = latestDate;
+                startInput.value = latestDate;
 
                 endInput.min = sortedDates[0];
-                endInput.max = sortedDates[sortedDates.length - 1];
-                endInput.value = sortedDates[sortedDates.length - 1];
+                endInput.max = latestDate;
+                endInput.value = latestDate;
             }
 
             populateCustomDropdown('flight', flights, 'Flights');
@@ -818,7 +820,8 @@
             });
 
             let statusText = document.getElementById('status-text').innerText;
-            document.getElementById('detailsHeaderTitle').innerHTML = `EB DETAILS: <span class="text-blue-600">${statusText.toUpperCase()}</span>`;
+            // Updated to use normal casing instead of toUpperCase()
+            document.getElementById('detailsHeaderTitle').innerHTML = `EB Details: <span class="text-blue-600">${statusText}</span>`;
 
             // Since filteredData is precisely 1 unique event per bag, they all receive identical datasets to match perfectly.
             updateKPIs(filteredData);
@@ -1477,7 +1480,8 @@
 
             document.getElementById('loadingPopup').classList.remove('hidden');
 
-            fetch(defaultFileName)
+            // --- UPDATED FETCH REQUEST TO DISABLE CACHING ---
+            fetch(defaultFileName + '?v=' + new Date().getTime(), { cache: 'no-store' })
                 .then(response => {
                     if (!response.ok) throw new Error("File not found on server.");
                     return response.arrayBuffer();
