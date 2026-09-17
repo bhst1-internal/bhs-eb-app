@@ -1477,7 +1477,8 @@
 
             document.getElementById('loadingPopup').classList.remove('hidden');
 
-            fetch(defaultFileName)
+            // --- UPDATED FETCH REQUEST TO DISABLE CACHING ---
+            fetch(defaultFileName + '?v=' + new Date().getTime(), { cache: 'no-store' })
                 .then(response => {
                     if (!response.ok) throw new Error("File not found on server.");
                     return response.arrayBuffer();
